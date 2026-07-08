@@ -1,6 +1,7 @@
-# المحاضرة 12 — Inference in First-Order Logic (الاستنتاج في منطق المرتبة الأولى)
+# المحاضرة 7 — Bottom-Up Parsing & LR Parser (التحليل من الأسفل إلى الأعلى)
 
-> **المادة:** الذكاء الاصطناعي (القسم النظري) | **الموضوع:** الاستنتاج في منطق المرتبة الأولى — `Universal Instantiation`، `Existential Instantiation`، `Unification`، `Generalized Modus Ponens`، `Forward Chaining`، `Backward Chaining`، `Resolution`
+> **المادة:** مبادئ المترجمات (القسم النظري) | **الموضوع:** التحليل التصاعدي — `Shift-Reduce Parsing` و `LR Parser`
+> **المحاضِرة:** د. أليدا اسبر | **الشرائح:** 112 – 142 | **التاريخ:** 30/05/2026
 
 ---
 
@@ -8,12 +9,13 @@
 
 | المرحلة | الأدوات | المخرجات |
 | --- | --- | --- |
-| 1 — تمثيل المعرفة (Propositional Logic) | `Entailment`، `Truth Tables`، `Resolution` | قاعدة معرفة محدودة |
-| 2 — منطق المرتبة الأولى (FOL Syntax/Semantics) | `Quantifiers`، `Predicates`، `Functions` | صياغة قاعدة معرفة غنية |
-| **3 — الاستنتاج في FOL ← أنت هنا** | `UI`، `EI`، `GMP`، `Unification`، `Forward/Backward Chaining`، `Resolution` | **إثبات جُمَل جديدة آلياً** |
-| 4 — التعلم الآلي | `Supervised`، `Unsupervised`، `Gradient Descent` | نماذج تتعلم من البيانات |
+| التحليل المعجمي `Lexical Analysis` | `Scanner`، `DFA`، `NFA`، `Regular Expressions` | `Token Stream` |
+| التحليل النحوي العلوي `Top-Down Parsing` | `LL(1)`، `Recursive Descent`، `First/Follow` | `Parse Tree` |
+| **التحليل النحوي التصاعدي `Bottom-Up Parsing` ← أنت هنا** | **`LR Parser`، `Shift-Reduce`، `ACTION/GOTO Table`** | **`Parse Tree` من الأوراق للجذر** |
+| التحليل الدلالي `Semantic Analysis` | `AST`، `Symbol Table` | `Annotated AST` |
+| توليد الكود `Code Generation` | `Stack Machine`، `Register Allocation` | `Intermediate/Target Code` |
 
-> **نوع هذه المحاضرة:** نظري + خوارزميات + تتبع تنفيذ (`algorithm_trace`) — تركّز على كيفية استنتاج حقائق جديدة آلياً من قاعدة معرفة مكتوبة بـ `FOL`.
+> **نوع هذه المحاضرة:** `Parsing` — تحليل تصاعدي باستخدام `Shift-Reduce` و `LR Parser` مع جداول `ACTION` و `GOTO`.
 
 ---
 
@@ -21,706 +23,327 @@
 
 ---
 
-### 1. نظرة عامة — ما الهدف من هذه المحاضرة؟
+### 1. مفهوم التحليل التصاعدي `Bottom-Up Parsing` — الشريحة 112
 
 #### النص الأصلي يقول:
-> المحاضرة تغطي: Reducing first-order inference to propositional inference | Unification | Generalized Modus Ponens | Forward and backward chaining | Logic programming | Resolution
+> Building Tree from leafs going up until the root
+> - Operator Precedence Parsing
+> - Shift Reduce Parsing or (LR Parsing)
+>
+> Using Shift Reduce Parsing we try to reduce the sentence in order to deduce the original symbol from which the sentence was generated
 
 #### الشرح المبسّط:
-لدينا قاعدة معرفة (`KB`) مكتوبة بمنطق المرتبة الأولى `FOL` — يعني فيها متحولات وكميّات (`∀`، `∃`). السؤال: كيف نستنتج حقائق جديدة آلياً؟
+في `Top-Down Parsing` كنّا نبدأ من الجذر (الرمز الابتدائي `S`) وننزل إلى الأوراق (الرموز الطرفية). أمّا في `Bottom-Up Parsing` **نعكس الاتجاه تماماً**: نبدأ من الرموز الطرفية (الأوراق) ونصعد تدريجياً حتى نصل إلى `S`.
 
-المحاضرة تقدّم **ثلاثة مسارات**:
-1. **التحويل إلى منطق قضايا** (`Propositionalization`) ثم تطبيق ما نعرفه
-2. **التسلسل الأمامي** (`Forward Chaining`) — من الحقائق إلى الهدف
-3. **التسلسل الخلفي** (`Backward Chaining`) — من الهدف إلى الحقائق
-4. **الدحض** (`Resolution`) — تقنية استنتاج كاملة
-
-**لماذا؟** لأن `FOL` أقوى من المنطق القضوي لكنه يحتاج أدوات استنتاج خاصة.
+**لماذا؟** لأنّ `Bottom-Up` يتعامل مع قواعد أوسع من `Top-Down` — يحل مشاكل `Left Recursion` و `Ambiguity` بشكل أفضل، وهو أساس معظم مُولِّدات المُحلِّلات الحقيقية كـ `yacc`/`bison`.
 
 #### 💡 التشبيه:
-> لديك قانون يقول «كل من يسرق يُعاقَب» + حقيقة «علي سرق». كيف تثبت «علي يُعاقَب» آلياً؟ هذا هو موضوع المحاضرة.
-> **وجه الشبه:** القانون العام = `∀x`، الحقيقة الفردية = Ground Fact، الاستنتاج = الإجراء القضائي.
+> تخيّل أنّك تُجمّع أحجية صور (`Jigsaw Puzzle`): تبدأ بالقطع الصغيرة (الأوراق) وتجمّعها معاً تدريجياً حتى تكتمل الصورة الكاملة (الجذر `S`).
+> **وجه الشبه:** القطع الصغيرة = `Tokens` | الصورة الكاملة = الرمز الابتدائي `S`
 
----
+#### الأنواع الرئيسية:
 
-### 2. Universal Instantiation (UI) — التعميم الكلي التعييني
-
-#### النص الأصلي يقول:
-> Every instantiation of a universally quantified sentence is entailed by it.
-> $$\frac{\forall v \;\alpha}{\text{SUBST}(\{v/g\},\alpha)}$$
-> for any variable $v$ and ground term $g$
-
-#### الشرح المبسّط:
-`UI` تقول: إذا كان شيء صحيحاً لـ **كل** `x`، فهو صحيح لأي قيمة محددة تضعها بدلاً من `x`.
-
-**مثال المحاضرة:**
-من `∀x King(x) ∧ Greedy(x) ⇒ Evil(x)` نستنتج:
-- `King(John) ∧ Greedy(John) ⇒ Evil(John)`  (بوضع `x = John`)
-- `King(Richard) ∧ Greedy(Richard) ⇒ Evil(Richard)` (بوضع `x = Richard`)
-- `King(Father(John)) ∧ Greedy(Father(John)) ⇒ Evil(Father(John))` (بوضع `x = Father(John)`)
-
-#### 📐 المعادلة: SUBST
-
-$$\frac{\forall v \;\alpha}{\text{SUBST}(\{v/g\},\alpha)}$$
-
-**الشرح:**
-- $\forall v$ : الكمّ الكلي على المتحول $v$
-- $\alpha$ : الجملة المكمَّمة
-- $g$ : `ground term` — قيمة محددة لا تحتوي متحولات
-- $\text{SUBST}(\{v/g\},\alpha)$ : استبدال كل ظهور لـ $v$ بـ $g$ داخل $\alpha$
-
-**لماذا مهم؟** `UI` يمكن تطبيقه **مرات غير محدودة** ويضيف جُملاً جديدة للـ `KB` مع الحفاظ على التكافؤ المنطقي.
-
-#### 💡 التشبيه:
-> القانون يقول «كل مواطن له حق التصويت». بمجرد أن أثبت أن أحمد مواطن، أطبّق القانون عليه مباشرة.
-> **وجه الشبه:** `∀x` = القانون، `g = أحمد` = الحالة الفردية، `SUBST` = التطبيق على الحالة.
-
----
-
-### 3. Existential Instantiation (EI) — التعميم الوجودي التعييني
-
-#### النص الأصلي يقول:
-> For any sentence α, variable v, and constant symbol k that does not appear elsewhere in the knowledge base:
-> $$\frac{\exists v \;\alpha}{\text{SUBST}(\{v/k\},\alpha)}$$
-> E.g., ∃x Crown(x) ∧ OnHead(x, John) yields Crown(C₁) ∧ OnHead(C₁, John)
-> provided C₁ is a new constant symbol, called a **Skolem constant**
-
-#### الشرح المبسّط:
-`EI` تقول: إذا علمنا أن شيئاً موجوداً (بدون معرفة من هو)، نعطيه اسماً جديداً لم يُذكر من قبل.
-
-**مثال 1 من المحاضرة:**
-من `∃x Crown(x) ∧ OnHead(x, John)`:
-- لا نعرف من يحمل التاج بالضبط
-- نعطي هذا الشيء اسماً: `C₁` (يُسمى `Skolem constant`)
-- نستنتج: `Crown(C₁) ∧ OnHead(C₁, John)`
-
-**مثال 2 من المحاضرة:**
-من `∃x d(xʸ)/dy = xʸ` نستنتج `d(eʸ)/dy = eʸ` (حيث `e` ثابت سكولم جديد).
-
-#### مهم للامتحان ⚠️:
-> `Skolem constant` هو **ثابت جديد كلياً** لم يظهر في `KB` من قبل — لا تستخدم ثابتاً موجوداً.
-
----
-
-### 4. الفرق الجوهري بين UI و EI
-
-#### النص الأصلي يقول:
-> UI can be applied several times to **add** new sentences; the new KB is logically equivalent to the old.
-> EI can be applied once to **replace** the existential sentence; the new KB is **not** equivalent to the old, but is satisfiable iff the old KB was satisfiable.
-
-#### الشرح المبسّط:
-
-| الخاصية | `UI` | `EI` |
-| --- | --- | --- |
-| عدد مرات التطبيق | غير محدود | مرة واحدة فقط |
-| العلاقة بالـ KB الأصلي | **تكافؤ منطقي** | ليست مكافئة (لكن متوافقة في الإشباع) |
-| الأثر | **إضافة** جمل جديدة | **استبدال** الجملة الوجودية |
-| الرمز | `∀v` | `∃v` |
-
-**لماذا هذا الفرق مهم؟** لأن `EI` تُفقدنا معلومة «ماهية» الشيء الموجود — لكنها تحافظ على **وجوده** المنطقي.
-
-#### 💡 التشبيه:
-> `UI`: قانون يقول «كل موظف مؤمَّن» — يمكنك تطبيقه على مئة موظف.
-> `EI`: «هناك شخص يملك المفتاح» — نسميه `X` مرة واحدة ونمضي.
-> **وجه الشبه:** `EI` = إعطاء اسم مجهول لحل مؤقت.
-
----
-
-### 5. Reduction to Propositional Inference — التحويل إلى منطق القضايا
-
-#### النص الأصلي يقول:
-> Suppose the KB contains: ∀x King(x)∧Greedy(x)⇒Evil(x), King(John), Greedy(John), Brother(Richard,John)
-> Instantiating the universal sentence in all possible ways, we have...
-> The new KB is **propositionalized**: proposition symbols are King(John), Greedy(John), Evil(John), King(Richard) etc.
-
-#### الشرح المبسّط:
-**الفكرة:** حوّل `FOL KB` إلى `Propositional KB` بتطبيق `UI` بكل الطرق الممكنة، ثم استخدم آليات الاستنتاج القضوي.
-
-**مثال المحاضرة:**
-- KB الأصلي: `∀x King(x)∧Greedy(x)⇒Evil(x)` + `King(John)` + `Greedy(John)` + `Brother(Richard,John)`
-- بعد التحويل: أنتجنا `King(John)∧Greedy(John)⇒Evil(John)` + `King(Richard)∧Greedy(Richard)⇒Evil(Richard)` + الحقائق الأصلية
-- النتيجة قضوية: رموزها `King(John)`، `Greedy(John)`، `Evil(John)`، `King(Richard)`، إلخ
-
-**نقاط مهمة من المحاضرة:**
-- **ادعاء 1:** جملة أرضية (`ground sentence`) معلولة بالـ KB الجديد ⟺ معلولة بالـ KB الأصلي
-- **ادعاء 2:** كل `FOL KB` يمكن تحويله إلى قضوي مع الحفاظ على الاستلزام
-- **مبرهنة هربراند (1930):** إذا كانت جملة `α` معلولة بـ `FOL KB`، فهي معلولة بمجموعة **منتهية** من الـ `KB` القضوي
-
----
-
-### 6. Problems with Propositionalization — مشاكل التحويل القضوي
-
-#### النص الأصلي يقول:
-> Propositionalization seems to generate lots of irrelevant sentences.
-> With p k-ary predicates and n constants, there are p·nᵏ instantiations
-> With function symbols, it gets much much worse!
-> **Claim:** entailment in FOL is **semidecidable**
-> **Theorem (Turing/Church 1936):** entailment in FOL is semidecidable
-
-#### الشرح المبسّط:
-المشكلة الرئيسية: `Propositionalization` **ينتج جُملاً غير ذات صلة** كثيرة جداً.
-
-**مثال:** من `∀y Greedy(y)` و `∀x King(x)∧Greedy(x)⇒Evil(x)` يبدو واضحاً أن `Evil(John)`، لكن التحويل القضوي ينتج حقائق مثل `Greedy(Richard)` التي لا علاقة لها بالسؤال.
-
-**المشكلة الأعمق:**
-- مع `p` محمولات `k`-ارية و `n` ثابتاً: هناك `p·nᵏ` تعيين ممكن
-- مع دوال (`function symbols`): لا نهاية للـ `ground terms` (مثل `Father(Father(Father(John)))`)
-- **الفكرة الذكية:** تطبيق `UI` مع عمق متزايد من 0 إلى ∞ — إذا كانت `α` معلولة ستُكتشف، لكن إذا لم تكن معلولة **لن تتوقف الحلقة** → الاستنتاج **نصف قابل للقرار** (`semidecidable`)
-
-#### مهم للامتحان ⚠️:
-> `Entailment` في `FOL` هو `semidecidable`: إذا كانت الجملة معلولة نستطيع إثباتها في وقت منتهٍ. أما إذا لم تكن معلولة، قد تدور الحلقة إلى الأبد.
-
----
-
-### 7. Unification — التوحيد
-
-#### النص الأصلي يقول:
-> We can get the inference immediately if we can find a substitution θ such that King(x) and Greedy(x) match King(John) and Greedy(y)
-> θ = {x/John, y/John} works
-> UNIFY(α, β) = θ if αθ = βθ
-
-#### الشرح المبسّط:
-**الفكرة الجوهرية:** بدلاً من توليد كل التعيينات الممكنة، نجد مباشرةً التعيين `θ` الذي يجعل الأنماط **متطابقة**.
-
-`Unification` هو: إيجاد إحلال (`substitution`) يجعل تعبيرَين أو أكثر متطابقَيْن.
-
-**جدول أمثلة المحاضرة:**
-
-| p | q | θ (المُوحِّد) |
-| --- | --- | --- |
-| `Knows(John, x)` | `Knows(John, Jane)` | `{x/Jane}` |
-| `Knows(John, x)` | `Knows(y, OJ)` | `{x/OJ, y/John}` |
-| `Knows(John, x)` | `Knows(y, Mother(y))` | `{y/John, x/Mother(John)}` |
-| `Knows(John, x)` | `Knows(x, OJ)` | `fail` (تعارض: x=John وx=OJ في نفس الوقت) |
-
-**Standardizing Apart:** لحل تعارض المتحولات، نُعيد تسمية متحولات إحدى الجملتين — مثلاً `Knows(z₁₇, OJ)` بدلاً من `Knows(x, OJ)`.
-
-#### 📐 المعادلة: Unification
-
-$$\text{UNIFY}(\alpha, \beta) = \theta \quad \text{if} \quad \alpha\theta = \beta\theta$$
-
-**الشرح:**
-- $\alpha$، $\beta$: التعبيران المراد توحيدهما
-- $\theta$: `substitution` — مجموعة من الاستبدالات `{var/term, ...}`
-- $\alpha\theta$: نتيجة تطبيق `θ` على `α`
-
-#### 💡 التشبيه:
-> `Unification` مثل تعبئة الفراغات في جملتين حتى تصبحا نفس الجملة.
-> «سافر \_\_\_ إلى باريس» + «سافر أحمد إلى \_\_\_» → التوحيد: الأول=أحمد، الثاني=باريس.
-> **وجه الشبه:** المتحولات = فراغات، `θ` = التعبئة.
-
-#### 🤔 تفعيل الفهم (اسأل نفسك):
-> **سؤال:** لماذا تفشل `UNIFY(Knows(John,x), Knows(x,OJ))`؟
-> **لماذا هذا مهم؟** لأن تعيين `x=John` وفي نفس الوقت `x=OJ` يعني `John=OJ` — وهذا تعارض. الحل: `Standardize Apart` ليصبح متحول الثانية `z₁₇`.
-
----
-
-### 8. Generalized Modus Ponens (GMP)
-
-#### النص الأصلي يقول:
-> $$\frac{p_1',\; p_2',\; \ldots,\; p_n',\;\;(p_1 \wedge p_2 \wedge \ldots \wedge p_n \Rightarrow q)}{q\theta}$$
-> where $p_i'\theta = p_i\theta$ for all i
-> GMP used with KB of **definite clauses** (exactly one positive literal). All variables assumed universally quantified.
-
-#### الشرح المبسّط:
-`GMP` = `Modus Ponens` المُعمَّم ليعمل مع متحولات.
-
-**الفكرة:**
-- لدينا حقائق: `p₁'، p₂'، ...، pₙ'`
-- لدينا قاعدة: `(p₁ ∧ p₂ ∧ ... ∧ pₙ ⇒ q)`
-- إذا وجدنا `θ` بحيث `pᵢ'θ = pᵢθ` لكل `i`
-- نستنتج: `qθ`
-
-**مثال المحاضرة التفصيلي:**
-- `p₁'` = `King(John)` ، `p₁` = `King(x)`
-- `p₂'` = `Greedy(y)` (من `∀y Greedy(y)`) ، `p₂` = `Greedy(x)`
-- `θ` = `{x/John, y/John}`
-- `q` = `Evil(x)` → `qθ` = `Evil(John)` ✅
-
-**`Definite Clause`:** جملة بها **بالضبط متحول إيجابي واحد** — مثلاً `¬p₁ ∨ ¬p₂ ∨ q` (ما يقابل `p₁ ∧ p₂ ⇒ q`).
-
-#### ⚖️ المقايضة: GMP مقابل التحويل القضوي
-
-| | `GMP` | `Propositionalization` |
-| --- | --- | --- |
-| المزايا | يعمل مباشرة بالمتحولات | لا يحتاج `Unification` |
-| العيوب | يقتصر على `Definite Clauses` | ينفجر عدد الجمل |
-| متى تختاره | قواعد معرفة منظمة (هرمية) | لـ KB صغير محدود |
-
----
-
-### 9. Soundness of GMP — صحة GMP
-
-#### النص الأصلي يقول:
-> Need to show that: p₁',...,pₙ', (p₁∧...∧pₙ⇒q) ⊨ qθ provided that pᵢ'θ = pᵢθ for all i
-> Lemma: For any definite clause p, we have p ⊨ pθ by UI
-> 1. (p₁∧...∧pₙ⇒q) ⊨ (p₁∧...∧pₙ⇒q)θ = (p₁θ∧...∧pₙθ⇒qθ)
-> 2. p₁',...,pₙ' ⊨ p₁'∧...∧pₙ' ⊨ p₁'θ∧...∧pₙ'θ
-> 3. From 1 and 2, qθ follows by ordinary Modus Ponens
-
-#### الشرح المبسّط:
-إثبات صحة `GMP` يتم بثلاث خطوات:
-1. **القاعدة بعد التعيين:** `(p₁∧...∧pₙ⇒q)θ = (p₁θ∧...∧pₙθ⇒qθ)` ← بتطبيق `UI`
-2. **الحقائق بعد التعيين:** `p₁'θ = p₁θ` لكل `i` (تعريف التوحيد)
-3. **النتيجة:** من الخطوتين + `Modus Ponens` العادي → `qθ` صحيحة ✅
-
----
-
-### 10. Example Knowledge Base — مثال قاعدة المعرفة (قضية غرب المجرم)
-
-#### النص الأصلي يقول:
-> The law says that it is a crime for an American to sell weapons to hostile nations. The country Nono, an enemy of America, has some missiles, and all of its missiles were sold to it by Colonel West, who is American.
-> **Prove that Col. West is a criminal.**
-
-#### الشرح المبسّط:
-هذا مثال كلاسيكي يُستخدم طوال المحاضرة لشرح `Forward Chaining`، `Backward Chaining`، و`Resolution`.
-
-**ترميز قاعدة المعرفة بـ FOL:**
-
-| الحقيقة الطبيعية | الترميز بـ FOL |
+| النوع | الفكرة |
 | --- | --- |
-| من يبيع أسلحة لدولة عدائية وهو أمريكي فهو مجرم | `American(x)∧Weapon(y)∧Sells(x,y,z)∧Hostile(z) ⇒ Criminal(x)` |
-| نونو يملك بعض الصواريخ | `Owns(Nono,M₁)` و `Missile(M₁)` |
-| كل صاروخ تملكه نونو بيعه لها الكولونيل ويست | `∀x Missile(x)∧Owns(Nono,x) ⇒ Sells(West,x,Nono)` |
-| الصواريخ أسلحة | `Missile(x) ⇒ Weapon(x)` |
-| عدو أمريكا دولة عدائية | `Enemy(x,America) ⇒ Hostile(x)` |
-| ويست أمريكي | `American(West)` |
-| نونو عدو أمريكا | `Enemy(Nono,America)` |
-
-**الهدف:** إثبات `Criminal(West)`
+| `Operator Precedence Parsing` | يستغل أولويات العمليات مباشرةً |
+| `Shift-Reduce Parsing` (= `LR Parsing`) | يستخدم مكدّساً ويُطبّق عمليتي `Shift` و `Reduce` |
 
 ---
 
-### 11. Forward Chaining Algorithm — خوارزمية التسلسل الأمامي
+### 2. التحليل بالإزاحة والاختزال `Shift-Reduce Parsing` — الشريحة 112–113
 
 #### النص الأصلي يقول:
-> function FOL-FC-ASK(KB, α) returns a substitution or false
+> Using Shift Reduce Parsing we try to reduce the sentence in order to deduce the original symbol from which the sentence was generated
 
 #### الشرح المبسّط:
-**التسلسل الأمامي** = ابدأ من الحقائق المعروفة، طبّق القواعد، اشتق حقائق جديدة، حتى تصل للهدف.
+فكرة `Shift-Reduce` بسيطة جداً: لدينا مكدّس (`Stack`) وسلسلة الدخل (`Input`). نُطبّق عمليتين متناوبتين:
 
-💡 **التشبيه:**
-> مثل محقق يجمع الأدلة واحداً تلو الآخر حتى يثبت التهمة.
-> **وجه الشبه:** الأدلة = حقائق `KB`، القواعد = القوانين، الاستنتاج = الحكم.
+- **`Shift`:** خذ الرمز التالي من الدخل وادفعه إلى المكدّس.
+- **`Reduce`:** إذا وُجد أعلى المكدّس سلسلة تُطابق الجانب الأيمن لإحدى القواعد، استبدلها بالرمز الأيسر لتلك القاعدة.
+- **`Accept`:** إذا بقي في المكدّس `$S` وانتهى الدخل بـ `$` → قبول الجملة.
+- **`Error`:** حالة لا تنطبق عليها أيٌّ من القرارات أعلاه.
 
-#### 💻 الكود: FOL-FC-ASK
+#### 💡 التشبيه:
+> تخيّل حارس أمن مطار يُفحص الحقائب: يضعها على الحزام (`Shift`) فإذا تطابق محتواها مع نمط مسموح (`Handle`) يُمرّرها (`Reduce`). إذا اكتملت كل الحقائب بنجاح → `Accept`.
+> **وجه الشبه:** الحزام = `Stack` | النمط المسموح = `Handle`
 
-#### ما هذا الكود؟
-> خوارزمية `Forward Chaining` في `FOL` — تشتق جُملاً جديدة بتطبيق `GMP` على الحقائق المعروفة حتى تحقق الهدف أو تستنفد الاشتقاقات.
+#### 🔍 تتبع التنفيذ: مثال على `Shift-Reduce` (الشريحة 113)
 
+**القواعد النحوية:**
 ```text
-// FOL-FC-ASK: Forward Chaining for First-Order Logic
-function FOL-FC-ASK(KB, α) returns a substitution or false
-
-  repeat until new is empty          // Keep iterating as long as new facts appear
-    new ← {}                          // Initialize new facts set
-    for each sentence r in KB do      // Scan every rule in KB
-      (p1 ∧ ... ∧ pn ⇒ q) ← STANDARDIZE-APART(r)  // Rename vars to avoid clashes
-      for each θ such that                 // Find all matching substitutions
-          (p1 ∧ ... ∧ pn)θ = (p1' ∧ ... ∧ pn')θ    // Unify premises with KB facts
-          for some p1',...,pn' in KB
-        q' ← SUBST(θ, q)              // Apply substitution to conclusion
-        if q' is not a renaming of a sentence already in KB or new then
-          add q' to new               // Add new derived fact
-          φ ← UNIFY(q', α)            // Check if goal is achieved
-          if φ is not fail then return φ  // Return substitution if goal matched
-    add new to KB                     // Add all new facts to KB
-  return false                        // Goal not entailed
+E → E + E
+E → E * E
+E → (E)
+E → Id
 ```
 
-#### شرح كل سطر:
-1. `repeat until new is empty` → تكرار حتى لا تظهر حقائق جديدة — شرط التوقف
-2. `new ← {}` → إفراغ مجموعة الحقائق الجديدة في كل دورة
-3. `for each sentence r in KB` → مسح كل قاعدة في `KB`
-4. `STANDARDIZE-APART(r)` → إعادة تسمية المتحولات لتجنب التعارض
-5. `for each θ` → إيجاد كل التعيينات التي توحّد مقدمات القاعدة مع حقائق `KB`
-6. `q' ← SUBST(θ, q)` → توليد الاستنتاج الجديد بتطبيق التعيين
-7. `if q' is not a renaming...` → تجنب إضافة نسخ مكررة
-8. `add q' to new` → إضافة الحقيقة الجديدة
-9. `φ ← UNIFY(q', α)` → محاولة مطابقة الحقيقة الجديدة مع الهدف
-10. `if φ is not fail then return φ` → إذا طابق الهدف → نجاح
-11. `add new to KB` → إضافة الحقائق الجديدة للـ `KB` قبل الدورة التالية
-12. `return false` → إذا انتهت الدورات دون تحقيق الهدف
+**المدخل:** `Id1 + Id2 * Id3 $`
 
-**الناتج المتوقع:**
-> تعيين `θ` يجعل الهدف متحققاً، أو `false` إذا لم يكن الهدف معلولاً بالـ `KB`.
+| المكدّس (`Stack`) | الدخل (`Input`) | الإجراء (`Action`) | المقبض (`Handle`) |
+| --- | --- | --- | --- |
+| `$` | `Id1+Id2*Id3$` | `Shift` | — |
+| `$Id1` | `+Id2*Id3$` | `Reduce` | `Id1` |
+| `$E` | `+Id2*Id3$` | `Shift` | — |
+| `$E+` | `Id2*Id3$` | `Shift` | — |
+| `$E+Id2` | `*Id3$` | `Reduce` | `Id2` |
+| `$E+E` | `*Id3$` | `Shift` | — |
+| `$E+E*` | `Id3$` | `Shift` | — |
+| `$E+E*Id3` | `$` | `Reduce` | `Id3` |
+| `$E+E*E` | `$` | `Reduce` | `E*E` |
+| `$E+E` | `$` | `Reduce` | `E+E` |
+| `$E` | `$` | `Accept` | — |
 
----
-
-### 12. Forward Chaining Proof — تتبع إثبات المثال
-
-#### النص الأصلي يقول:
-> [مخطط التسلسل الأمامي بخطوتين]
-> الطبقة الأولى: American(West), Missile(M1), Owns(Nono,M1), Enemy(Nono,America)
-> الطبقة الثانية: Weapon(M1), Sells(West,M1,Nono), Hostile(Nono)
-> النتيجة النهائية: Criminal(West)
-
-#### 🔍 تتبع التنفيذ: Forward Chaining على مثال Colonel West
-
-**المدخل:** قاعدة المعرفة المذكورة في القسم 10 والهدف `Criminal(West)`
-
-| الخطوة | القاعدة المطبقة | الاستنتاج الجديد |
-| --- | --- | --- |
-| 0 | حقائق أولية | `American(West)`, `Missile(M₁)`, `Owns(Nono,M₁)`, `Enemy(Nono,America)` |
-| 1 | `Missile(x)⇒Weapon(x)` مع `x=M₁` | `Weapon(M₁)` |
-| 2 | `Missile(x)∧Owns(Nono,x)⇒Sells(West,x,Nono)` مع `x=M₁` | `Sells(West,M₁,Nono)` |
-| 3 | `Enemy(x,America)⇒Hostile(x)` مع `x=Nono` | `Hostile(Nono)` |
-| 4 | القاعدة الجنائية مع `x=West,y=M₁,z=Nono` | `Criminal(West)` ✅ |
-
-**النتيجة:** `Criminal(West)` ثُبتت في 4 خطوات.
+**النتيجة:** الجملة صحيحة نحوياً ✅
 
 ---
 
-### 13. Properties of Forward Chaining — خصائص التسلسل الأمامي
+### 3. مكوّنات `LR Parser` — الشريحة 114
 
 #### النص الأصلي يقول:
-> Sound and complete for first-order definite clauses (proof similar to propositional proof)
-> Datalog = first-order definite clauses + **no functions** (e.g., crime KB)
-> FC terminates for Datalog in poly iterations: at most p·nᵏ literals
-> May not terminate in general if α is not entailed
-> This is unavoidable: entailment with definite clauses is semidecidable
+> LR Parser Components:
+> - Table of Productions (Goto & Action)
+> - Stack
+> - Input String
+> - Processing Program
 
 #### الشرح المبسّط:
+`LR Parser` هو تطوير منهجي لـ `Shift-Reduce`. بدلاً من القرار اليدوي "هل أُزيح أم أختزل؟"، يعتمد على **جدول منظم** يُحدّد الإجراء بدقة لكل (حالة، رمز).
 
-| الخاصية | التفاصيل |
-| --- | --- |
-| **صحة** (`Soundness`) | ✅ — كل ما يُستنتج صحيح |
-| **اكتمال** (`Completeness`) | ✅ — لـ `Definite Clauses` |
-| `Datalog` | `FOL Definite Clauses` بدون دوال → يتوقف في `p·nᵏ` تكراراً |
-| مع الدوال | قد لا يتوقف إذا لم يكن الهدف معلولاً |
-| التعقيد | مطابقة المقدمات مع الحقائق هي مشكلة `NP-hard` |
-
----
-
-### 14. Efficiency of Forward Chaining — كفاءة التسلسل الأمامي
-
-#### النص الأصلي يقول:
-> Simple observation: no need to match a rule on iteration k if a premise wasn't added on iteration k-1
-> ⇒ match each rule whose premise contains a newly added literal
-> Database indexing allows O(1) retrieval of known facts
-> e.g., query Missile(x) retrieves Missile(M₁)
-> Matching conjunctive premises against known facts is NP-hard
-> Forward chaining is widely used in **deductive databases**
-
-#### الشرح المبسّط:
-
-**تحسين 1:** لا داعي لإعادة مطابقة قاعدة إذا لم تتغير أي من مقدماتها — **فقط القواعد التي تحتوي الحقائق الجديدة**.
-
-**تحسين 2:** `Database Indexing` للحقائق → استرجاع `O(1)`.
-
-**تحدٍّ أساسي:** مطابقة مقدمات متعددة مع حقائق معروفة = `NP-hard` (يتضح من مثال `Hard Matching`).
-
-#### 📊 المخطط: Hard Matching Example (تلوين الخريطة)
+#### 📊 المخطط: بنية `LR Parser` (الشريحة 114)
 
 #### ما هذا المخطط؟
-> يوضح أن مطابقة قاعدة بمقدمات متعددة (`conjunctive premises`) مع الحقائق هي مشكلة `CSP` مكافئة لـ `3SAT`.
+> يوضّح المكوّنات الأربعة لـ `LR Parser` وكيف تتفاعل: البرنامج يقرأ الدخل ويرجع للجداول ليقرر الإجراء، ثم يُنفّذه على المكدّس.
 
-القاعدة: `Diff(wa,nt)∧Diff(wa,sa)∧Diff(nt,q)∧...∧Diff(v,sa) ⇒ Colorable()`
-
-مع الحقائق: `Diff(Red,Blue)، Diff(Red,Green)، Diff(Green,Red)، ...`
-
-→ `Colorable()` يُستنتج ⟺ `CSP` له حل → وهذا `NP-hard`.
-
----
-
-### 15. Backward Chaining Algorithm — خوارزمية التسلسل الخلفي
-
-#### النص الأصلي يقول:
-> function FOL-BC-ASK(KB, goals, θ) returns a set of substitutions
-> if goals is empty then return {θ}
-> ...for each sentence r in KB where STANDARDIZE-APART(r) = (p1∧...∧pn⇒q) and θ' ← UNIFY(q,q') succeeds
-
-#### الشرح المبسّط:
-**التسلسل الخلفي** = ابدأ من الهدف، اسأل «ماذا أحتاج لإثباته؟»، ارجع إلى الحقائق.
-
-💡 **التشبيه:**
-> مثل محامي دفاع يبدأ من نتيجة «موكلي بريء» ثم يبحث عن الأدلة التي تثبت ذلك بالأثر الرجعي.
-> **وجه الشبه:** الهدف = الحكم المُراد، القواعد = المسارات للأدلة، الحقائق = الأدلة النهائية.
-
-#### 💻 الكود: FOL-BC-ASK
-
-#### ما هذا الكود؟
-> خوارزمية `Backward Chaining` — تحل من الهدف إلى الخلف بعمق أول (`Depth-First`)، وتُعيد مجموعة كل التعيينات المُحققة للهدف.
-
-```text
-// FOL-BC-ASK: Backward Chaining for First-Order Logic
-function FOL-BC-ASK(KB, goals, θ) returns a set of substitutions
-  inputs: KB - knowledge base
-          goals - list of conjuncts (query with θ already applied)
-          θ - current substitution, initially {}
-  local variables: answers - set of substitutions, initially empty
-
-  if goals is empty then return {θ}        // Base case: all goals satisfied
-  q' ← SUBST(θ, FIRST(goals))              // Get first goal with current substitution
-  for each sentence r in KB                // Try each KB sentence
-    where STANDARDIZE-APART(r) = (p1∧...∧pn ⇒ q)  // Separate variables
-    and θ' ← UNIFY(q, q') succeeds         // Try to unify rule head with goal
-    new_goals ← [p1,...,pn | REST(goals)]  // Prepend new subgoals
-    answers ← FOL-BC-ASK(KB, new_goals, COMPOSE(θ',θ)) ∪ answers  // Recurse
-  return answers                           // Return all successful substitutions
-```
-
-#### شرح كل سطر:
-1. `if goals is empty then return {θ}` → حالة القاعدة: إذا لم تبقَ أهداف، التعيين الحالي هو حل
-2. `q' ← SUBST(θ, FIRST(goals))` → أخذ الهدف الأول بعد تطبيق التعيين الحالي
-3. `for each sentence r in KB` → المحاولة مع كل قاعدة في `KB`
-4. `STANDARDIZE-APART(r)` → منع تعارض المتحولات
-5. `UNIFY(q, q') succeeds` → مطابقة رأس القاعدة مع الهدف
-6. `new_goals ← [p1,...,pn | REST(goals)]` → الأهداف الجديدة = مقدمات القاعدة + بقية الأهداف
-7. `FOL-BC-ASK(KB, new_goals, COMPOSE(θ',θ))` → استدعاء تكراري مع التعيين المركّب
-8. `return answers` → إعادة كل التعيينات الناجحة
-
-**الناتج المتوقع:**
-> مجموعة من التعيينات `{θ₁, θ₂, ...}` كل منها يحقق الهدف.
-
----
-
-### 16. Backward Chaining Example — تتبع إثبات المثال خلفياً
-
-#### النص الأصلي يقول:
-> [مخطط التسلسل الخلفي من Criminal(West) إلى الحقائق الأولية]
-> بدأ من Criminal(West) → {x/West}
-> ثم الأهداف: American(x), Weapon(y), Sells(x,y,z), Hostile(z)
-> American(West) ← {} | Weapon(y) → Missile(y) → {y/M1}
-> Sells(West,M1,z) ← {z/Nono} | Hostile(Nono) ← Enemy(Nono,America) ← {}
-
-#### 🔍 تتبع التنفيذ: Backward Chaining على مثال Colonel West
-
-**المدخل:** `KB` من القسم 10، الهدف: `Criminal(West)`
-
-| الخطوة | الهدف الحالي | القاعدة المستخدمة | التعيين |
+#### وصف العُقد:
+| # | العُقدة | النوع `kind` | الشرح |
 | --- | --- | --- | --- |
-| 1 | `Criminal(West)` | `American(x)∧Weapon(y)∧Sells(x,y,z)∧Hostile(z)⇒Criminal(x)` | `{x/West}` |
-| 2 | `American(West)` | حقيقة مباشرة في `KB` | `{}` |
-| 3 | `Weapon(y)` | `Missile(y)⇒Weapon(y)` | - |
-| 4 | `Missile(y)` | حقيقة `Missile(M₁)` | `{y/M₁}` → التعيين يصبح `{x/West, y/M₁}` |
-| 5 | `Sells(West,M₁,z)` | `Missile(x)∧Owns(Nono,x)⇒Sells(West,x,Nono)` مع `x=M₁` | `{z/Nono}` |
-| 6 | `Missile(M₁)` | حقيقة | `{}` |
-| 7 | `Owns(Nono,M₁)` | حقيقة | `{}` |
-| 8 | `Hostile(Nono)` | `Enemy(x,America)⇒Hostile(x)` مع `x=Nono` | - |
-| 9 | `Enemy(Nono,America)` | حقيقة | `{}` |
-| **النتيجة** | جميع الأهداف محققة | - | `{x/West, y/M₁, z/Nono}` ✅ |
+| 1 | `Input String` | مدخل | سلسلة الرموز المراد تحليلها |
+| 2 | `Program` | معالج | البرنامج المُنفِّذ — يقرأ الجداول ويُطبّق القرار |
+| 3 | `Terminal & NonTerminal Stack` | تخزين | المكدّس الذي يحمل الرموز والحالات |
+| 4 | `Action` | جدول | يُحدّد: `Shift`/`Reduce`/`Accept`/`Error` |
+| 5 | `Goto` | جدول | يُحدّد الحالة الجديدة بعد `Reduce` |
 
-**النتيجة:** `Criminal(West)` مثبتة بالتسلسل الخلفي.
+#### وصف الروابط:
+| من | إلى | التسمية | نوع السهم | الشرح |
+| --- | --- | --- | --- | --- |
+| `Input String` | `Program` | قراءة | ← | البرنامج يقرأ الرمز الحالي |
+| `Program` | `Action` | استعلام | → | يبحث عن الإجراء في جدول `ACTION` |
+| `Program` | `Goto` | استعلام | → | يبحث عن الحالة التالية في `GOTO` |
+| `Program` | `Stack` | تحكم | ↔ | يُدفع/يُسحب من المكدّس |
 
----
-
-### 17. Properties of Backward Chaining — خصائص التسلسل الخلفي
-
-#### النص الأصلي يقول:
-> Depth-first recursive proof search: space is linear in size of proof
-> Incomplete due to infinite loops ⇒ fix by checking current goal against every goal on stack
-> Inefficient due to repeated subgoals (both success and failure) ⇒ fix using caching of previous results
-> Widely used (without improvements!) for **logic programming**
-
-#### الشرح المبسّط:
-
-| الخاصية | التفاصيل |
-| --- | --- |
-| **نوع البحث** | `Depth-First` — المساحة خطية في حجم الإثبات |
-| **الاكتمال** | ❌ ناقص بسبب الحلقات اللانهائية |
-| **حل الحلقات** | مقارنة الهدف الحالي مع كل الأهداف في المكدس |
-| **التكرار** | أهداف فرعية متكررة تُضيّع الوقت |
-| **حل التكرار** | `Caching` (تخزين مؤقت للنتائج) |
-| **الاستخدام** | `Logic Programming` (خاصة `Prolog`) |
-
----
-
-### 18. Logic Programming — البرمجة المنطقية
-
-#### النص الأصلي يقول:
-> Sound bite: computation as inference on logical KBs
-> Logic programming: 1. Identify problem 2. Assemble information 3. Tea break 4. Encode information in KB 5. Encode problem instance as facts 6. Ask queries 7. Find false facts
-> Should be easier to debug Capital(NewYork, US) than x := x + 2 !
-
-#### الشرح المبسّط:
-**البرمجة المنطقية** = بدلاً من برمجة **كيف** تحل المشكلة، تُخبر الحاسوب **ماذا** تعرف عن المشكلة ثم يستنتج الحل.
-
-#### ⚖️ المقايضة: البرمجة المنطقية مقابل البرمجة العادية
-
-| | البرمجة المنطقية | البرمجة العادية |
-| --- | --- | --- |
-| التفكير | تصف المعرفة | تبرمج الحل |
-| التصحيح | `Capital(NewYork,US)` أوضح | `x := x+2` أصعب فهمه |
-| التوقف | غير مضمون | مضمون في الغالب |
-| متى تختاره | مسائل رمزية/منطقية | خوارزميات عددية |
-
----
-
-### 19. Prolog Systems — أنظمة Prolog
-
-#### النص الأصلي يقول:
-> Basis: backward chaining with Horn clauses + bells & whistles
-> Program = set of clauses = head :- literal₁, ... literalₙ
-> criminal(X) :- american(X), weapon(Y), sells(X,Y,Z), hostile(Z).
-> Efficient unification by open coding | Depth-first, left-to-right backward chaining
-> Closed-world assumption ("negation as failure")
-> e.g., alive(X) :- not dead(X). alive(joe) succeeds if dead(joe) fails
-
-#### الشرح المبسّط:
-`Prolog` = نظام برمجة منطقية يطبّق `Backward Chaining` مع `Horn Clauses`.
-
-**مميزات `Prolog`:**
-- `Open Coding` للـ `Unification` → كفاءة عالية
-- ربط مباشر للجُمل المتطابقة (`Direct Linking`)
-- `Closed World Assumption`: ما لم يُثبت صحيح → خاطئ (`Negation as Failure`)
-- محمولات مدمجة للحساب: `X is Y*Z+3`
-
-**مثال `Prolog` لـ `DFS`:**
-```text
-dfs(X) :- goal(X).                    // Base: X is goal
-dfs(X) :- successor(X,S), dfs(S).    // Recursive: try successors
+```diagram
+type: flowchart
+title: LR Parser Architecture
+direction: TD
+nodes:
+  - id: input
+    label: Input String
+    kind: data
+    level: 0
+  - id: program
+    label: Processing Program
+    kind: process
+    level: 1
+  - id: stack
+    label: Stack (Symbol+State)
+    kind: storage
+    level: 2
+  - id: action
+    label: ACTION Table
+    kind: table
+    level: 2
+  - id: goto
+    label: GOTO Table
+    kind: table
+    level: 2
+edges:
+  - from: input
+    to: program
+    label: reads
+  - from: program
+    to: stack
+    label: push/pop
+  - from: program
+    to: action
+    label: lookup
+  - from: program
+    to: goto
+    label: lookup
 ```
 
-**مثال `append`:**
+---
+
+### 4. جدول `ACTION` و `GOTO` — الشريحة 116
+
+#### النص الأصلي يقول:
+> (جدول يحتوي حالات 0–11 مع أعمدة: Id، +، *، (، )، $ في جانب ACTION، وE، T، F في جانب GOTO)
+
+#### الشرح المبسّط:
+القلب النابض لـ `LR Parser` هو جدولان:
+
+**جدول `ACTION`:**
+- المدخل: (رقم الحالة الحالية، الرمز الطرفي التالي)
+- المخرج: أحد أربعة إجراءات:
+  - `Sn` — أزِح (`Shift`) وانتقل للحالة `n`
+  - `Rk` — اختزل (`Reduce`) باستخدام القاعدة رقم `k`
+  - `Acc` — قبول (`Accept`)
+  - خانة فارغة — خطأ (`Error`)
+
+**جدول `GOTO`:**
+- المدخل: (رقم الحالة، رمز غير طرفي)
+- المخرج: رقم الحالة التالية بعد الاختزال
+
+#### الجدول من الشريحة 116 (كاملاً):
+
+| الحالة | Id | + | * | ( | ) | $ | E | T | F |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | S5 | | | S4 | | | 1 | 2 | 3 |
+| 1 | | S6 | | | | Acc | | | |
+| 2 | | R2 | S7 | | R2 | R2 | | | |
+| 3 | | R4 | R4 | | R4 | R4 | | | |
+| 4 | S5 | | | S4 | | | 8 | 2 | 3 |
+| 5 | | R6 | R6 | | R6 | R6 | | | |
+| 6 | S5 | | | S4 | | | | 9 | 3 |
+| 7 | S5 | | | S4 | | | | | 10 |
+| 8 | | S6 | | | S11 | | | | |
+| 9 | | R1 | S7 | | R1 | R1 | | | |
+| 10 | | R3 | R3 | | R3 | R3 | | | |
+| 11 | | R5 | R5 | | R5 | R5 | | | |
+
+**القواعد المستخدمة (ترقيم الشريحة 115):**
 ```text
-append([], Y, Y).
-append([X|L], Y, [X|Z]) :- append(L, Y, Z).
+(1) E → E + T
+(2) E → T
+(3) T → T * F
+(4) T → F
+(5) F → (E)
+(6) F → Id
 ```
-استعلام: `append(A, B, [1,2])` → يُعيد:
-- `A=[], B=[1,2]`
-- `A=[1], B=[2]`
-- `A=[1,2], B=[]`
+
+#### مهم للامتحان ⚠️:
+> الأرقام في جانب `GOTO` هي أرقام حالات فقط — لا تُقرأ كـ `S` أو `R`. أمّا `Sn` في `ACTION` تعني `Shift` للحالة `n`، و `Rk` تعني `Reduce` بالقاعدة `k`.
 
 ---
 
-### 20. Resolution — الدحض في FOL
+### 5. خوارزمية `LR Parser` — الشريحة 117
 
 #### النص الأصلي يقول:
-> Full first-order version:
-> $$\frac{\ell_1 \vee \cdots \vee \ell_k, \quad m_1 \vee \cdots \vee m_n}{(\ell_1 \vee \cdots \vee \ell_{i-1} \vee \ell_{i+1} \vee \cdots \vee \ell_k \vee m_1 \vee \cdots \vee m_{j-1} \vee m_{j+1} \vee \cdots \vee m_n)\theta}$$
-> where UNIFY(ℓᵢ, ¬mⱼ) = θ
-> Apply resolution steps to CNF(KB ∧ ¬α); complete for FOL
+```text
+if (action [s, a] == shift k) then
+    push (a, State Number k) on top of the stack
+    new input symbol
+
+If (action [s, a]== reduce k) then
+    pop 2 * (Length of the right side of production k)
+    /* including the states */
+    push the production stored into GOTO[S', A]
+    where A is the left side of production K
+    and S' is the new top of the stack after the previous pop
+```
 
 #### الشرح المبسّط:
-`Resolution` في `FOL` = مزج بنودَيْن من بندَيْن (`clauses`) بعد توحيد (`Unify`) حرف ومنفيّه.
+هذان هما القلبان النابضان للخوارزمية:
 
-**المثال من المحاضرة:**
-- `¬Rich(x) ∨ Unhappy(x)`
-- `Rich(Ken)`
-- الحل: `UNIFY(Rich(x), Rich(Ken))` → `θ = {x/Ken}`
-- النتيجة: `Unhappy(Ken)`
+**حالة `Shift k`:**
+- ادفع الرمز الحالي `a` والحالة الجديدة `k` معاً على المكدّس
+- اقرأ الرمز التالي من الدخل
 
-**طريقة الإثبات بالدحض:**
-1. أضف نفي الهدف: `KB ∧ ¬α`
-2. حوّل إلى `CNF` (`Conjunctive Normal Form`)
-3. طبّق `Resolution` حتى تصل للجملة الفارغة `□`
-4. إذا وصلت `□` → تناقض → `α` مثبتة ✅
+**حالة `Reduce k`:**
+- القاعدة `k` لها جانب أيمن طوله `n` (عدد الرموز)
+- اسحب من المكدّس `2*n` عنصراً (لأن المكدّس يحمل كلاً من الرمز والحالة معاً لكل موقع)
+- الحالة الجديدة على رأس المكدّس هي `S'`
+- ادفع `(A, GOTO[S', A])` حيث `A` هو الجانب الأيسر للقاعدة
 
-#### 📐 المعادلة: Resolution Rule in FOL
+**لماذا `2*n`؟** لأنّ كل عنصر في المكدّس هو زوج (رمز، حالة) — فلكل رمز في الجانب الأيمن، هناك حالة مُقابلة محفوظة أيضاً.
 
-$$\frac{\ell_1 \vee \cdots \vee \ell_k \quad\quad m_1 \vee \cdots \vee m_n}{(\ell_1 \vee \cdots \vee \hat{\ell}_i \vee \cdots \vee \ell_k \vee m_1 \vee \cdots \vee \hat{m}_j \vee \cdots \vee m_n)\theta}$$
+#### 💡 التشبيه:
+> تخيّل دفتر ملاحظات مزدوج: لكل كلمة تكتبها (`رمز`) تكتب أيضاً رقم الصفحة التي جئت منها (`حالة`). عند المسح تحتاج لمسح الكلمة ورقم صفحتها معاً = ×2.
+> **وجه الشبه:** الكلمة = `Symbol` | رقم الصفحة = `State`
 
-$$\text{where} \quad \text{UNIFY}(\ell_i, \neg m_j) = \theta$$
-
-**الشرح:**
-- $\ell_i$ : حرف في البند الأول
-- $m_j$ : حرف في البند الثاني
-- $\neg m_j$ : منفيّ $m_j$
-- $\theta$ : التعيين الذي يوحّد $\ell_i$ مع $\neg m_j$
-- $\hat{\ell}_i$ : الحرف المحذوف من البند الأول
-- النتيجة: دمج البندين بحذف الحرف وتوأمه المنفي
-
----
-
-### 21. Conversion to CNF — التحويل إلى الصيغة الطبيعية التعاملية
-
-#### النص الأصلي يقول:
-> Everyone who loves all animals is loved by someone:
-> ∀x [∀y Animal(y) ⇒ Loves(x,y)] ⇒ [∃y Loves(y,x)]
-> Steps: 1. Eliminate biconditionals and implications 2. Move ¬ inwards 3. Standardize variables 4. Skolemize 5. Drop universal quantifiers 6. Distribute ∧ over ∨
-
-#### الشرح المبسّط:
-لتحويل أي جملة `FOL` إلى `CNF` نتبع 6 خطوات:
-
-#### ⚙️ الخطوات / الخوارزمية: Conversion to CNF
+#### ⚙️ الخوارزمية: `LR Parser` — الإجراء الكامل
 
 #### ما هدف هذه العملية؟
-> تحويل جُمَل `FOL` إلى `CNF` لتمكين تطبيق خوارزمية `Resolution`.
+> تحليل سلسلة رموز باستخدام جدول `ACTION/GOTO` لإصدار حكم قبول/رفض، مع بناء شجرة الاشتقاق ضمنياً.
 
 ```algorithm
-1 | حذف ⟺ و ⇒ | Equivalence/Implication Elimination | α⇒β يصبح ¬α∨β
-2 | نقل ¬ إلى الداخل | De Morgan + Quantifier Duality | ¬∀x,p ≡ ∃x ¬p | ¬∃x,p ≡ ∀x ¬p
-3 | توحيد المتحولات | Standardize Apart | كل كمّ يستخدم متحولاً مختلفاً
-4 | Skolemize | Skolem Function/Constant | ∃y داخل ∀x → دالة F(x)
-5 | حذف ∀ | Drop Universal Quantifiers | المتحولات المتبقية كلها كلية ضمناً
-6 | توزيع ∧ على ∨ | Distribution | (A∧B)∨C → (A∨C)∧(B∨C)
+1 | تهيئة المكدّس     | Stack          | ادفع الحالة الابتدائية 0 و $ على المكدّس
+2 | قراءة الرمز       | Input          | اقرأ أول رمز من الدخل → a
+3 | استعلام ACTION    | ACTION Table   | ابحث عن ACTION[s, a] حيث s = رأس المكدّس الحالي
+4أ | إذا Shift k      | Stack          | ادفع (a, k) على المكدّس؛ اقرأ الرمز التالي؛ ارجع لخطوة 3
+4ب | إذا Reduce k     | Stack/GOTO     | اسحب 2*|RHS(k)| عنصراً؛ s' = رأس المكدّس الجديد؛ ادفع (LHS(k), GOTO[s',LHS(k)]); ارجع لخطوة 3
+4ج | إذا Accept       | Output         | توقف — الجملة مقبولة ✅
+4د | إذا Error        | Error Handler  | الجملة خاطئة نحوياً ❌
 ```
 
 #### نقاط التنفيذ:
-- `Skolemize`: إذا كان `∃y` تحت `∀x`، استبدل `y` بـ `F(x)` (دالة سكولم من `x`)
-- إذا لم يكن `∃y` تحت أي `∀` → استبدل بثابت سكولم (`Skolem constant`)
-- بعد الخطوة 6: كل جملة في صيغة `(L₁∨L₂∨...)` أي `clause`
-
-**مثال تفصيلي من المحاضرة:**
-- الأصل: `∀x [∀y Animal(y) ⇒ Loves(x,y)] ⇒ [∃y Loves(y,x)]`
-- بعد خطوة 1: `∀x [¬∀y ¬Animal(y) ∨ Loves(x,y)] ∨ [∃y Loves(y,x)]`
-- بعد خطوة 2: `∀x [∃y ¬(¬Animal(y) ∨ Loves(x,y))] ∨ [∃y Loves(y,x)]` → ... → `∀x [∃y Animal(y) ∧ ¬Loves(x,y)] ∨ [∃z Loves(z,x)]`
-- بعد خطوة 3: `∀x [∃y Animal(y) ∧ ¬Loves(x,y)] ∨ [∃z Loves(z,x)]`
-- بعد **Skolemize** (y→F(x)، z→G(x)): `∀x [Animal(F(x)) ∧ ¬Loves(x,F(x))] ∨ Loves(G(x),x)`
-- بعد خطوة 5 (حذف ∀): `[Animal(F(x)) ∧ ¬Loves(x,F(x))] ∨ Loves(G(x),x)`
-- بعد خطوة 6: `[Animal(F(x)) ∨ Loves(G(x),x)] ∧ [¬Loves(x,F(x)) ∨ Loves(G(x),x)]`
-
-النتيجة: بندان (`clauses`) جاهزان لـ `Resolution`.
+- المكدّس يحمل دائماً **أزواج** (رمز، حالة) — لا تنسَ الحالة!
+- عند `Reduce`، **لا** تقرأ رمزاً جديداً من الدخل — الرمز `a` يبقى كما هو
+- الحالة التي تُدفع هي `GOTO[S', A]` وليس `k` (كما في `Shift`)
 
 ---
 
-### 22. Resolution Proof: Definite Clauses — إثبات بالدحض
+### 6. تتبع كامل لتحليل `a * b + c $` — الشرائح 118–142
 
 #### النص الأصلي يقول:
-> [مخطط Resolution الكامل لإثبات Criminal(West)]
+> (سلسلة شرائح تُظهر خطوة بخطوة تحليل الجملة `a * b + c $` باستخدام القواعد السابقة والجدول)
 
 #### الشرح المبسّط:
-المخطط يبين كيف يُستخدم `Resolution` لإثبات `Criminal(West)` بطريقة الدحض:
+لنتتبّع خطوة بخطوة. القواعد والجدول هما نفسهما من الشريحة 115/116. الجملة: **`a * b + c $`** حيث `a`، `b`، `c` هي رموز من نوع `Id`.
 
-**الخطوات الكبرى:**
-1. أضف نفي الهدف: `¬Criminal(West)`
-2. حوّل `KB ∧ ¬Criminal(West)` إلى `CNF`
-3. طبّق `Resolution` بين بنود `CNF` حتى تصل `□` (جملة فارغة)
+#### 🔍 تتبع التنفيذ الكامل (الشرائح 118–142)
 
-#### 🔍 تتبع التنفيذ: Resolution Proof
+**المدخل:** `a * b + c $`
+**الحالة الابتدائية للمكدّس:** `[0]`
 
-**المدخل:** `¬Criminal(West)` + قواعد `KB` بصيغة `CNF`
+| الخطوة | المكدّس (من الأسفل للأعلى) | الدخل المتبقي | الإجراء | التفسير |
+| --- | --- | --- | --- | --- |
+| 1 | `0` | `a * b + c $` | `Shift 5` | `ACTION[0, Id] = S5` |
+| 2 | `0 Id 5` | `* b + c $` | `Reduce 6` | `ACTION[5, *] = R6` ← `F → Id` |
+| 3 | `0 F 3` | `* b + c $` | — | `GOTO[0, F] = 3` |
+| 4 | `0 F 3` | `* b + c $` | `Reduce 4` | `ACTION[3, *] = R4` ← `T → F` |
+| 5 | `0 T 2` | `* b + c $` | — | `GOTO[0, T] = 2` |
+| 6 | `0 T 2` | `* b + c $` | `Shift 7` | `ACTION[2, *] = S7` |
+| 7 | `0 T 2 * 7` | `b + c $` | `Shift 5` | `ACTION[7, Id] = S5` |
+| 8 | `0 T 2 * 7 Id 5` | `+ c $` | `Reduce 6` | `ACTION[5, +] = R6` ← `F → Id` |
+| 9 | `0 T 2 * 7 F 10` | `+ c $` | — | `GOTO[7, F] = 10` |
+| 10 | `0 T 2 * 7 F 10` | `+ c $` | `Reduce 3` | `ACTION[10, +] = R3` ← `T → T * F` |
+| 11 | `0 T 2` | `+ c $` | — | سُحب 6 عناصر (3 أزواج)، `GOTO[0, T] = 2` |
+| 12 | `0 T 2` | `+ c $` | `Reduce 2` | `ACTION[2, +] = R2` ← `E → T` |
+| 13 | `0 E 1` | `+ c $` | — | `GOTO[0, E] = 1` |
+| 14 | `0 E 1` | `+ c $` | `Shift 6` | `ACTION[1, +] = S6` |
+| 15 | `0 E 1 + 6` | `c $` | `Shift 5` | `ACTION[6, Id] = S5` |
+| 16 | `0 E 1 + 6 Id 5` | `$` | `Reduce 6` | `ACTION[5, $] = R6` ← `F → Id` |
+| 17 | `0 E 1 + 6 F 3` | `$` | — | `GOTO[6, F] = 3` |
+| 18 | `0 E 1 + 6 F 3` | `$` | `Reduce 4` | `ACTION[3, $] = R4` ← `T → F` |
+| 19 | `0 E 1 + 6 T 9` | `$` | — | `GOTO[6, T] = 9` |
+| 20 | `0 E 1 + 6 T 9` | `$` | `Reduce 1` | `ACTION[9, $] = R1` ← `E → E + T` |
+| 21 | `0 E 1` | `$` | — | `GOTO[0, E] = 1` |
+| 22 | `0 E 1` | `$` | **`ACC`** | `ACTION[1, $] = Acc` ✅ |
 
-| الخطوة | البند الأول | البند الثاني | الناتج |
-| --- | --- | --- | --- |
-| 1 | `¬American(x)∨¬Weapon(y)∨¬Sells(x,y,z)∨¬Hostile(z)∨Criminal(x)` | `¬Criminal(West)` | `¬American(West)∨¬Weapon(y)∨¬Sells(West,y,z)∨¬Hostile(z)` |
-| 2 | (الناتج السابق) | `American(West)` | `¬Weapon(y)∨¬Sells(West,y,z)∨¬Hostile(z)` |
-| 3 | (السابق) | `¬Missile(x)∨Weapon(x)` | `¬Missile(y)∨¬Sells(West,y,z)∨¬Hostile(z)` |
-| 4 | (السابق) | `Missile(M₁)` | `¬Sells(West,M₁,z)∨¬Hostile(z)` |
-| 5 | (السابق) | `¬Missile(x)∨¬Owns(Nono,x)∨Sells(West,x,Nono)` | `¬Missile(M₁)∨¬Owns(Nono,M₁)∨¬Hostile(Nono)` |
-| 6 | (السابق) | `Missile(M₁)` | `¬Owns(Nono,M₁)∨¬Hostile(Nono)` |
-| 7 | (السابق) | `Owns(Nono,M₁)` | `¬Hostile(Nono)` |
-| 8 | `¬Enemy(x,America)∨Hostile(x)` | `¬Hostile(Nono)` | `¬Enemy(Nono,America)` |
-| 9 | `¬Enemy(Nono,America)` | `Enemy(Nono,America)` | `□` (جملة فارغة) ✅ |
+**النتيجة:** الجملة `a * b + c` مقبولة نحوياً ✅
 
-**النتيجة:** تناقض → `Criminal(West)` مثبتة.
+#### ملاحظة:
+> في الشريحة 118 بدأ المكدّس بـ `[0]` وسلسلة الدخل `a * b + c$`. كل شريحة (119–142) تُظهر خطوة واحدة أو اثنتين. الجدول أعلاه يجمع كل هذه الخطوات في مكان واحد.
 
 ---
 
-## الجزء الثاني: ملخص منظم
+## الجزء الثاني: ملخص منظّم
+
+---
 
 ### أهم التعاريف والمفاهيم
 
 | المصطلح | التعريف | مثال/ملاحظة |
 | --- | --- | --- |
-| `Universal Instantiation (UI)` | استبدال المتحول الكلي بـ `ground term` | `∀x P(x)` → `P(John)` |
-| `Existential Instantiation (EI)` | استبدال المتحول الوجودي بثابت `Skolem` جديد | `∃x P(x)` → `P(C₁)` |
-| `Skolem Constant` | ثابت جديد لم يظهر في `KB` يُستخدم في `EI` | `C₁`, `M₁` |
-| `Skolem Function` | دالة تُستبدل بالمتحول الوجودي إذا كان داخل `∀` | `F(x)` |
-| `Propositionalization` | تحويل `FOL KB` إلى منطق قضوي بتطبيق `UI` | مفيد لـ `KB` صغير |
-| `Ground Term` | تعبير لا يحتوي متحولات | `John`، `Father(John)` |
-| `Unification` | إيجاد تعيين `θ` يجعل تعبيرَين متطابقَيْن | `UNIFY(P(x), P(John)) = {x/John}` |
-| `Standardize Apart` | إعادة تسمية متحولات جملة لتجنب التعارض | `x` → `z₁₇` |
-| `Most General Unifier (MGU)` | التعيين الأكثر عمومية (الأقل قيوداً) | (شرح زيادة للفهم) |
-| `Generalized Modus Ponens (GMP)` | `Modus Ponens` بمتحولات عبر `Unification` | `King(John)+King(x)∧Greedy(x)⇒Evil(x)` → `Evil(John)` |
-| `Definite Clause` | بند يحتوي بالضبط حرفاً إيجابياً واحداً | `¬A∨¬B∨C` ≡ `A∧B⇒C` |
-| `Forward Chaining` | الاستنتاج من الحقائق نحو الهدف | `FOL-FC-ASK` |
-| `Backward Chaining` | الاستنتاج من الهدف نحو الحقائق | `FOL-BC-ASK` |
-| `Datalog` | `FOL Definite Clauses` بدون دوال | يتوقف مضموناً |
-| `Resolution` | قاعدة استنتاج كاملة لـ `CNF` | يُثبت بالتناقض |
-| `CNF` | صيغة طبيعية تعاملية: `AND` من `OR`-بنود | مطلوب لـ `Resolution` |
-| `Semidecidable` | يُثبت إذا كانت الجملة معلولة، لا يتوقف إذا لم تكن | `FOL Entailment` |
+| `Bottom-Up Parsing` | تحليل يبدأ من الأوراق ويصعد للجذر | عكس `Top-Down` |
+| `Shift` | دفع رمز الدخل التالي على المكدّس مع حالة جديدة | `S5` تعني Shift للحالة 5 |
+| `Reduce` | استبدال أعلى المكدّس بالجانب الأيسر لقاعدة | `R6` تعني Reduce بالقاعدة 6 |
+| `Handle` | السلسلة في أعلى المكدّس التي تُطابق جانباً أيمن لقاعدة | مرشّحة للاختزال |
+| `LR Parser` | مُحلِّل تصاعدي يعتمد جداول `ACTION`/`GOTO` | L=قراءة يسار→يمين، R=اشتقاق يميني |
+| `ACTION Table` | جدول (حالة × رمز طرفي) → إجراء | يُحدّد Shift/Reduce/Accept/Error |
+| `GOTO Table` | جدول (حالة × رمز غير طرفي) → حالة | يُحدّد الحالة بعد Reduce |
+| `State` | رقم يُمثّل السياق الحالي للمُحلِّل | يُحفظ في المكدّس مع كل رمز |
+| `Accept` | الإجراء الذي يُشير لقبول الجملة | `ACTION[1, $] = Acc` |
 
 ---
 
@@ -728,45 +351,32 @@ $$\text{where} \quad \text{UNIFY}(\ell_i, \neg m_j) = \theta$$
 
 | الأداة | الوظيفة | ملاحظة |
 | --- | --- | --- |
-| `SUBST(θ, α)` | تطبيق تعيين `θ` على جملة `α` | `SUBST({x/John}, P(x)) = P(John)` |
-| `UNIFY(α, β)` | إيجاد `θ` بحيث `αθ = βθ` | يُعيد `fail` إذا مستحيل |
-| `STANDARDIZE-APART(r)` | إعادة تسمية متحولات قاعدة | يمنع تعارض المتحولات |
-| `COMPOSE(θ₁, θ₂)` | تركيب تعيينَيْن | `COMPOSE({x/y},{y/John}) = {x/John,y/John}` |
-| `FOL-FC-ASK(KB, α)` | التسلسل الأمامي | يُعيد `θ` أو `false` |
-| `FOL-BC-ASK(KB, goals, θ)` | التسلسل الخلفي | يُعيد مجموعة تعيينات |
+| `Stack` | يحفظ الرموز والحالات أثناء التحليل | أزواج (رمز، حالة) |
+| `Input String` | سلسلة الرموز المراد تحليلها | تنتهي بـ `$` |
+| `ACTION Table` | تحديد الإجراء بناءً على الحالة والرمز الطرفي | S/R/Acc/Error |
+| `GOTO Table` | تحديد الحالة التالية بعد الاختزال | أرقام حالات فقط |
+| `Processing Program` | المحرّك الرئيسي الذي يُنفّذ الخوارزمية | يقرأ الجدولين |
+| `Productions List` | قائمة القواعد النحوية مُرقَّمة | تُستخدم في Reduce |
 
 ---
 
 ### جداول مقارنات سريعة
 
-#### Forward Chaining مقابل Backward Chaining
+| المقارنة | `Top-Down` | `Bottom-Up` | الفرق |
+| --- | --- | --- | --- |
+| اتجاه البناء | من الجذر للأوراق | من الأوراق للجذر | عكسيان |
+| نوع الاشتقاق | اشتقاق أيسر `Leftmost` | اشتقاق أيمن عكسي `Reverse Rightmost` | — |
+| `Left Recursion` | مشكلة (يتعلّق) | يتعامل معها | LR أقوى |
+| القوة التعبيرية | `LL(k)` | `LR(k)` | LR يقبل مجموعة أوسع |
+| الأدوات الشائعة | `Recursive Descent` | `yacc`, `bison` | LR شائع أكثر |
+| التعقيد | أبسط تنفيذاً يدوياً | أعقد يدوياً لكن آلي | — |
 
-| المعيار | `Forward Chaining` | `Backward Chaining` |
+| المقارنة | `Shift` | `Reduce` |
 | --- | --- | --- |
-| الاتجاه | الحقائق → الهدف | الهدف → الحقائق |
-| نوع البحث | بحث أمامي شامل | `Depth-First` |
-| الفضاء | قد يكون كبيراً | خطي في حجم الإثبات |
-| الاكتمال | ✅ (مع `Datalog`) | ❌ (حلقات لانهائية) |
-| الاستخدام | قواعد بيانات استنتاجية | `Prolog`، `Logic Programming` |
-| الكفاءة | ينتج حقائق غير ذات صلة | يركّز على الهدف |
-
-#### UI مقابل EI
-
-| المعيار | `UI` | `EI` |
-| --- | --- | --- |
-| الكمّ | `∀` (كلي) | `∃` (وجودي) |
-| التطبيق | مرات غير محدودة | مرة واحدة فقط |
-| التكافؤ | `KB` الجديد مكافئ للأصلي | ليس مكافئاً (لكن متوافق) |
-| الأثر | إضافة جُمَل | استبدال الجملة الوجودية |
-
-#### GMP مقابل Resolution
-
-| المعيار | `GMP` | `Resolution` |
-| --- | --- | --- |
-| نوع الجُمَل | `Definite Clauses` فقط | أي `CNF Clauses` |
-| الاكتمال | ✅ لـ `Definite Clauses` | ✅ لـ `FOL` كاملاً |
-| الاتجاه | أمامي/خلفي | بالدحض (`Refutation`) |
-| التعقيد | أبسط | أعقد (يحتاج `CNF`) |
+| الفعل | ادفع رمزاً من الدخل | استبدل رموزاً بالجذر |
+| تغيير الدخل؟ | نعم (رمز يُقرأ) | لا (الرمز يبقى) |
+| تغيير المكدّس؟ | يزداد بعنصرين | يقلّ ثم يزداد بعنصرين |
+| في الجدول | `Sn` | `Rk` |
 
 ---
 
@@ -774,28 +384,23 @@ $$\text{where} \quad \text{UNIFY}(\ell_i, \neg m_j) = \theta$$
 
 | الفئة | المصطلحات |
 | --- | --- |
-| الاستنتاج الأساسي | `UI`، `EI`، `Skolem Constant`، `Skolem Function`، `SUBST` |
-| التوحيد | `Unification`، `Substitution`، `MGU`، `Standardize Apart`، `COMPOSE` |
-| الاستنتاج بالبناء | `GMP`، `Definite Clause`، `Forward Chaining`، `Backward Chaining` |
-| التحويل | `Propositionalization`، `CNF`، `Skolemization` |
-| الدحض | `Resolution`، `Refutation`، `Empty Clause □` |
-| الخصائص | `Soundness`، `Completeness`، `Semidecidable`، `Datalog` |
-| البرمجة المنطقية | `Prolog`، `Horn Clause`، `Negation as Failure`، `Closed World Assumption` |
+| العمليات الأساسية | `Shift`، `Reduce`، `Accept`، `Error` |
+| هياكل البيانات | `Stack`، `Input Buffer`، `ACTION Table`، `GOTO Table` |
+| مفاهيم القواعد | `Handle`، `Production`، `LHS`، `RHS`، `NonTerminal`، `Terminal` |
+| أنواع المُحلِّلات | `LR(0)`، `SLR(1)`، `LALR(1)`، `CLR(1)` |
+| الترميزات | `Sn` = Shift حالة n | `Rk` = Reduce قاعدة k | `Acc` | `$` = نهاية الدخل |
 
 ---
 
 ### أبرز النقاط الذهبية
 
-1. `UI` يحافظ على التكافؤ المنطقي — يمكن تطبيقه بلا حدود
-2. `EI` يُنتج `KB` غير مكافئ للأصلي لكن متوافق في الإشباع
-3. `Unification` هو قلب كل الخوارزميات — بدونه لا استنتاج في `FOL`
-4. `Propositionalization` صحيح لكن غير عملي مع `function symbols` (انفجار لانهائي)
-5. `GMP` يدمج `Unification` مع `Modus Ponens` — يعمل فقط على `Definite Clauses`
-6. `Forward Chaining`: كامل لـ `Datalog`، قد لا يتوقف مع `function symbols`
-7. `Backward Chaining`: موجّه للهدف — يركّز جهده على ما هو ذو صلة
-8. `Resolution` كاملة لـ `FOL` بالكامل — الأقوى لكن تحتاج `CNF`
-9. مطابقة المقدمات التعاملية (`conjunctive premise matching`) مشكلة `NP-hard`
-10. الاستنتاج في `FOL` **نصف قابل للقرار** (`semidecidable`) — حكم أساسي (Turing/Church 1936)
+1. **الاتجاه معكوس:** `Bottom-Up` يبني الشجرة من الأوراق للجذر — فكّر فيه كـ "اشتقاق أيمن معكوس".
+2. **المكدّس يحمل أزواجاً:** كل عنصر في المكدّس هو (رمز، حالة) — لا تنسَ الحالة!
+3. **قاعدة الـ ×2:** عند `Reduce k`، إذا كان `|RHS(k)| = n`، اسحب `2n` عنصراً من المكدّس.
+4. **`Shift` يُغيّر الدخل؛ `Reduce` لا يُغيّره:** بعد `Reduce` الرمز التالي في الدخل لا يتغيّر.
+5. **`GOTO` فقط للرموز غير الطرفية؛ `ACTION` فقط للطرفية.**
+6. **الحالة 0 دائماً في قاع المكدّس** — هي نقطة البداية الثابتة.
+7. **`Accept` يحدث فقط عندما:** المكدّس = `[0, E, 1]` والدخل = `$`.
 
 ---
 
@@ -803,89 +408,34 @@ $$\text{where} \quad \text{UNIFY}(\ell_i, \neg m_j) = \theta$$
 
 | الخطأ | التصحيح |
 | --- | --- |
-| استخدام `Skolem constant` موجود في `KB` | `Skolem constant` يجب أن يكون **جديداً كلياً** |
-| تطبيق `EI` أكثر من مرة على نفس الجملة | `EI` يُطبَّق **مرة واحدة** فقط |
-| الخلط بين `UI` (يضيف) و`EI` (يستبدل) | `UI` يبقي الجملة الأصلية، `EI` يستبدلها |
-| نسيان `Standardize Apart` قبل `Unification` | دائماً أعد تسمية المتحولات قبل التوحيد |
-| الاعتقاد بأن `Forward Chaining` يتوقف دائماً | لا يتوقف إذا كان الهدف غير معلول مع `function symbols` |
-| الاعتقاد بأن `Backward Chaining` كامل | ناقص بسبب الحلقات اللانهائية |
-| تطبيق `Resolution` على جُمَل غير `CNF` | يجب تحويل الجُمَل إلى `CNF` أولاً |
-| الخلط بين `Skolem Function` و`Skolem Constant` | `Constant` إذا لم يكن `∃` داخل `∀`؛ `Function` إذا كان داخله |
+| نسيان دفع الحالة مع الرمز في `Shift` | دائماً ادفع الزوج (رمز، حالة) |
+| قراءة رمز جديد بعد `Reduce` | لا! الرمز يبقى في الدخل بعد `Reduce` |
+| سحب `n` عناصر بدلاً من `2n` عند `Reduce` | `n` = طول RHS، والمكدّس يحمل الرمز + الحالة |
+| الخلط بين `S7` و `R7` | `S7` = Shift للحالة 7؛ `R7` = Reduce بالقاعدة 7 |
+| استخدام `GOTO` مع رمز طرفي | `GOTO` فقط للرموز غير الطرفية (`E`، `T`، `F`) |
+| نسيان `$` في نهاية الدخل | دائماً أضف `$` كرمز نهاية |
 
 ---
 
 ### خطوات وإجراءات المحاضرة
 
-#### ⚙️ الخطوات / الخوارزمية: Universal Instantiation (UI)
+#### ⚙️ الخوارزمية: `LR Parsing Algorithm`
 
-#### ما هدفها؟
-> تحويل جملة كلية إلى حقيقة محددة باستبدال المتحول بـ `ground term`.
+#### ما هدف هذه العملية؟
+> تحليل سلسلة رموز طرفية وإصدار حكم (قبول/رفض) باستخدام جدولي `ACTION` و `GOTO`.
 
 ```algorithm
-1 | حدد الجملة | ∀v α في KB | المتحول v والجسم α
-2 | اختر ground term | g (ثابت أو تعبير بلا متحولات) | يمكن أي عدد من الاختيارات
-3 | طبّق SUBST | SUBST({v/g}, α) | استبدل كل v بـ g في α
-4 | أضف الناتج | أضف إلى KB | KB موسَّع مكافئ منطقياً للأصل
+1 | تهيئة         | Stack        | Stack = [$, 0]؛ اقرأ الرمز الأول a من الدخل
+2 | قراءة الجدول  | ACTION Table | s = رأس المكدّس؛ ابحث ACTION[s, a]
+3أ | Shift k      | Stack        | ادفع (a, k)؛ اقرأ رمزاً جديداً؛ ارجع للخطوة 2
+3ب | Reduce k     | Stack+GOTO   | n = |RHS(k)|؛ اسحب 2n عنصراً؛ s' = رأس المكدّس؛ A = LHS(k)؛ ادفع (A, GOTO[s',A])؛ ارجع للخطوة 2
+3ج | Accept       | —            | انجاح! توقف
+3د | Error        | —            | خطأ نحوي؛ توقف
 ```
 
 #### نقاط التنفيذ:
-- يمكن تطبيق `UI` مرات غير محدودة مع قيم مختلفة لـ `g`
-- `KB` الجديد **مكافئ** منطقياً للأصلي
-
----
-
-#### ⚙️ الخطوات / الخوارزمية: Existential Instantiation (EI)
-
-#### ما هدفها؟
-> إزالة الكمّ الوجودي باستبدال المتحول بثابت سكولم جديد.
-
-```algorithm
-1 | حدد الجملة | ∃v α في KB | المتحول v والجسم α
-2 | أنشئ Skolem constant | k — ثابت لم يظهر في KB أبداً | مثل C₁ أو k_new
-3 | طبّق SUBST | SUBST({v/k}, α) | استبدل كل v بـ k في α
-4 | استبدل الجملة | احذف ∃v α وأضف الناتج | لا يُحفظ المستبدَل منه
-```
-
-#### نقاط التنفيذ:
-- `EI` يُطبَّق **مرة واحدة فقط** على كل جملة وجودية
-- `KB` الجديد **ليس مكافئاً** للأصلي لكنه `satisfiable iff` الأصلي كذلك
-
----
-
-#### ⚙️ الخطوات / الخوارزمية: Unification
-
-#### ما هدفها؟
-> إيجاد تعيين يجعل تعبيرَيْن متطابقَيْن.
-
-```algorithm
-1 | قارن رأسَيْ التعبيرين | Predicate / Functor | إذا مختلفان → FAIL
-2 | قارن عدد الوسائط | Arity | إذا مختلفان → FAIL
-3 | لكل زوج (tᵢ, sᵢ) | Recursive Unification | وحّد كل وسيط مع نظيره
-4 | إذا تعبير = متحول | Occur Check (اختياري) | تأكد عدم وجود دورة (x = F(x) → FAIL)
-5 | طبّق التعيين التراكمي | COMPOSE | ادمج التعيينات الجديدة مع القديمة
-6 | أعد التعيين الكلي | MGU | المُوحِّد الأكثر عمومية
-```
-
-#### نقاط التنفيذ:
-- `Standardize Apart` **قبل** التوحيد دائماً
-- `MGU` هو الأقل تقييداً من بين كل المُوحِّدات الممكنة
-
----
-
-#### ⚙️ الخطوات / الخوارزمية: Conversion to CNF
-
-#### ما هدفها؟
-> تحويل جمل `FOL` إلى `CNF` لتطبيق `Resolution`.
-
-```algorithm
-1 | حذف ⟺ | α⟺β → (α⇒β)∧(β⇒α) | التكافؤ المزدوج
-2 | حذف ⇒ | α⇒β → ¬α∨β | المادة الشرطية
-3 | نقل ¬ للداخل | De Morgan + Quantifier Duality | ¬∀x P ≡ ∃x ¬P
-4 | توحيد المتحولات | Standardize Apart | ∀x (∀x P(x)) → ∀x (∀y P(y))
-5 | Skolemize | استبدل ∃ بدالة/ثابت سكولم | ∃y → F(x) إذا داخل ∀x
-6 | حذف ∀ | الكميات الكلية ضمنية | جميع المتحولات المتبقية كلية
-7 | توزيع ∧ على ∨ | Distribution Law | (A∧B)∨C → (A∨C)∧(B∨C)
-```
+- الحالة `s` هي دائماً **أعلى عنصر في المكدّس** (ليس الرمز — بل رقم الحالة المقرون به)
+- في الشريحة، المكدّس مكتوب بشكل مرئي حيث تتداخل الرموز والأرقام (0، Id، 5، إلخ)
 
 ---
 
@@ -893,10 +443,9 @@ $$\text{where} \quad \text{UNIFY}(\ell_i, \neg m_j) = \theta$$
 
 | النمط | البنية الأساسية | متى تستخدمه |
 | --- | --- | --- |
-| `Definite Clause` | `p₁ ∧ ... ∧ pₙ ⇒ q` (قاعدة) أو `q` (حقيقة) | مع `GMP`، `Forward/Backward Chaining` |
-| `Resolution Step` | `(A ∨ ¬B) + (B ∨ C) → (A ∨ C)` | مع `CNF` |
-| `Skolem in ∀` | `∃y داخل ∀x` → `F(x)` (دالة) | في `Skolemization` |
-| `Skolem outside ∀` | `∃y` بدون `∀` حوله → `C₁` (ثابت) | في `EI` |
+| `Shift k` | `push(a, k); read next token` | عندما `ACTION[s,a] = Sk` |
+| `Reduce k` | `pop 2*n; push(LHS, GOTO[s',LHS])` | عندما `ACTION[s,a] = Rk` |
+| استعلام `GOTO` | `GOTO[current_top_state, NonTerminal]` | بعد كل `Reduce` |
 
 ---
 
@@ -904,1282 +453,775 @@ $$\text{where} \quad \text{UNIFY}(\ell_i, \neg m_j) = \theta$$
 
 | السيناريو | التعامل الصحيح | لماذا؟ |
 | --- | --- | --- |
-| الهدف ذو صلة بعدة حقائق | `Backward Chaining` | يركّز الجهد على الهدف |
-| `KB` كبير وعلاقات معقدة | `Forward Chaining` | يبني معرفة تراكمية |
-| أي جُمَل `FOL` (بما فيها سالبة) | `Resolution` | الأشمل والأكمل |
-| `KB` صغير بلا دوال | `Propositionalization` | بسيط ومضمون |
-| أهداف متكررة | `Backward Chaining + Caching` | يتجنب الحساب المكرر |
+| خانة `ACTION` فارغة | خطأ نحوي | الجملة لا تنتمي للغة |
+| `Reduce` ثم نفس الرمز مجدداً | استمر بدون قراءة رمز جديد | الرمز لم "يُستهلَك" بعد |
+| وصلت لـ `Acc` | توقف فوراً | الجملة مقبولة |
+| المكدّس = `[0, E, 1]` والدخل `$` | `Accept` | الحالة النهائية الصحيحة |
+
+---
+
+### الأفكار الرئيسية الشاملة
+
+`LR Parser` هو أساس كل أدوات توليد المُحلِّلات الحديثة (`yacc`، `bison`، `ANTLR`). فهمك لكيفية عمل `ACTION/GOTO` يمنحك القدرة على قراءة وتفسير أي مُحلِّل آلي، وتشخيص تعارضات `Shift/Reduce` التي تظهر عند بناء القواعد النحوية.
 
 ---
 
 ## الجزء الثالث: أسئلة اختيار من متعدد (MCQ)
 
-> **18 سؤالاً** — مستوى: medium/hard. التوزيع: مقارنات 25% | pseudocode/تتبع 35% | تطبيق 25% | تتبع خوارزمية 15%.
+> **18 سؤالاً** — مستوى: medium/hard. التوزيع: مقارنات 20% | سيناريو كود 25% | تطبيق 25% | تتبع خوارزميات 30%.
 
 ---
 
-### السؤال 1 (medium)
-ما الفرق الجوهري بين `UI` و`EI` في تأثيرهما على قاعدة المعرفة `KB`؟
+### السؤال 1 (medium) — مقارنة
+ما الفرق الجوهري بين `Top-Down Parsing` و `Bottom-Up Parsing`؟
 
-أ) `UI` يستبدل الجملة الأصلية، `EI` يضيف جُملاً جديدة
-ب) `UI` يضيف جُملاً جديدة مع الحفاظ على التكافؤ، `EI` يستبدل الجملة الوجودية مع فقدان التكافؤ
-ج) كلاهما يضيف جُملاً جديدة وكلاهما يحافظ على التكافؤ
-د) `UI` يُطبَّق مرة واحدة فقط، `EI` يُطبَّق مرات غير محدودة
-
-**الإجابة الصحيحة: ب**
-**التعليل:**
-- **ب صحيحة:** `UI` يُضاف إلى `KB` (`add`) والـ `KB` الجديد مكافئ منطقياً للأصلي. `EI` يُحلّ محل (`replace`) الجملة الوجودية وينتج `KB` غير مكافئ لكنه متوافق في الإشباع.
-- **أ خاطئة:** العكس هو الصحيح.
-- **ج خاطئة:** `EI` يفقد التكافؤ المنطقي.
-- **د خاطئة:** `UI` يُطبَّق مرات غير محدودة، `EI` يُطبَّق مرة واحدة.
-
----
-
-### السؤال 2 (hard)
-عند تطبيق `UNIFY(Knows(John, x), Knows(y, Mother(y)))` ما هو `θ`؟
-
-أ) `{x/Mother(y), y/John}`
-ب) `{y/John, x/Mother(John)}`
-ج) `fail` لأن `y` تظهر مرتين
-د) `{x/y, y/John, x/Mother(John)}`
-
-**الإجابة الصحيحة: ب**
-**التعليل:**
-- **ب صحيحة:** من `John = y` نستنتج `y/John`؛ ثم `x = Mother(y) = Mother(John)` → `x/Mother(John)`. بالتحقق: `Knows(John, Mother(John))` = `Knows(John, Mother(John))` ✅
-- **أ خاطئة:** التعيين غير مكتمل — `y` لم تُحسم بقيمة نهائية.
-- **ج خاطئة:** ظهور `y` مرتين لا يسبب فشلاً — المشكلة فقط إذا اقتضى `y = F(y)` (دورة).
-- **د خاطئة:** `x` لا يمكن أن يظهر مرتين في `θ` بقيم مختلفة.
-
----
-
-### السؤال 3 (medium)
-ما خاصية `Forward Chaining` التي تجعله مناسباً لـ `Datalog`؟
-
-أ) يضمن الوصول للهدف في `O(1)`
-ب) يتوقف بعد عدد منتهٍ من التكرارات (≤ p·nᵏ) مع ضمان الاكتمال
-ج) لا يستخدم `Unification` أبداً
-د) يتوقف دائماً حتى مع `function symbols`
-
-**الإجابة الصحيحة: ب**
-**التعليل:**
-- **ب صحيحة:** `Datalog` = `FOL Definite Clauses` بدون دوال. بدون دوال `ground terms` منتهية (`p·nᵏ`) → يتوقف مضموناً مع اكتمال.
-- **أ خاطئة:** `O(1)` للاسترجاع بالفهرسة، ليس للاكتمال.
-- **ج خاطئة:** `Forward Chaining` يستخدم `Unification` عبر `GMP`.
-- **د خاطئة:** مع `function symbols`، `ground terms` لا نهائية → قد لا يتوقف.
-
----
-
-### السؤال 4 (hard)
-في `FOL-BC-ASK`، ماذا يحدث عند استدعاء `COMPOSE(θ', θ)`؟
-
-أ) يُحذف `θ'` ويُبقي `θ` فقط
-ب) يُدمج تعيين `θ'` الجديد مع `θ` الحالي لتكوين تعيين مركّب
-ج) يتحقق من صحة `θ'` ثم يُرجعه إذا كان غير `fail`
-د) يطبّق `θ'` على الهدف ثم يُرجع الناتج
-
-**الإجابة الصحيحة: ب**
-**التعليل:**
-- **ب صحيحة:** `COMPOSE(θ', θ)` يدمج التعيينَيْن — يطبّق `θ'` على قيم `θ` ثم يضيف الروابط الجديدة.
-- **أ خاطئة:** لا نحذف أياً منهما — الدمج تراكمي.
-- **ج خاطئة:** التحقق يتم بـ `UNIFY` وليس `COMPOSE`.
-- **د خاطئة:** `COMPOSE` لا يتعامل مع الأهداف مباشرة.
-
----
-
-### السيناريو 1: تتبع Backward Chaining
-
-**السيناريو:**
-لدينا `KB` التالي:
-```
-Q(a)
-P(x) ⇒ R(x)
-Q(x) ⇒ P(x)
-R(x) ⇒ S(x)
-```
-الهدف: `S(a)`
-
----
-
-### السؤال 5 (hard) — السيناريو 1
-ما أول هدف فرعي يُنشأ عند `Backward Chaining` من `S(a)`؟
-
-أ) `Q(a)`
-ب) `P(a)`
-ج) `R(a)`
-د) `S(x)`
+أ) `Top-Down` أسرع دائماً
+ب) `Bottom-Up` يبني الشجرة من الجذر إلى الأوراق
+ج) `Bottom-Up` يبني الشجرة من الأوراق إلى الجذر عبر اشتقاق أيمن معكوس
+د) كلاهما يستخدمان نفس الجداول
 
 **الإجابة الصحيحة: ج**
 **التعليل:**
-- **ج صحيحة:** القاعدة الوحيدة التي ينتج عن رأسها `S(x)` هي `R(x)⇒S(x)`. بتوحيد `S(a)` مع `S(x)`: `θ={x/a}` → الهدف الجديد: `R(a)`.
-- **أ خاطئة:** `Q(a)` يأتي لاحقاً في السلسلة.
-- **ب خاطئة:** `P(a)` أيضاً لاحق.
-- **د خاطئة:** `S(x)` هو رأس القاعدة، ليس هدفاً فرعياً.
+- أ) خاطئ — السرعة تعتمد على التنفيذ والقواعد.
+- ب) خاطئ — هذا وصف `Top-Down`.
+- ج) **صحيح** — `Bottom-Up` يستخدم اشتقاقاً أيمن (`Rightmost Derivation`) لكن بالترتيب المعكوس.
+- د) خاطئ — `Top-Down` يستخدم `LL Table`، `Bottom-Up` يستخدم `ACTION/GOTO`.
 
 ---
 
-### السؤال 6 (hard) — السيناريو 1
-ما التسلسل الكامل لتوسيع الأهداف حتى الإثبات؟
+### السؤال 2 (medium) — تطبيق
+كم عنصراً يُسحب من المكدّس عند تطبيق `Reduce` بالقاعدة `T → T * F`؟
 
-أ) `S(a) → R(a) → P(a) → Q(a)` ✓ (حقيقة)
-ب) `S(a) → P(a) → Q(a)` ✓ (حقيقة)
-ج) `S(a) → Q(a)` ✓ (حقيقة مباشرة)
-د) `S(a) → R(a) → Q(a)` ✓ (حقيقة)
+أ) 2
+ب) 3
+ج) 6
+د) 5
+
+**الإجابة الصحيحة: ج**
+**التعليل:**
+- أ) خاطئ — 2 هو طول `T → F` (قاعدة أخرى).
+- ب) خاطئ — 3 هو عدد الرموز في RHS (`T`، `*`، `F`) لكن المكدّس يحمل الرمز + الحالة لكل منها.
+- ج) **صحيح** — |RHS| = 3 رموز، فيُسحب `2*3 = 6` عناصر.
+- د) خاطئ — لا يوجد مبرر لـ 5.
+
+---
+
+### السؤال 3 (hard) — تتبع خوارزمية
+بالرجوع للجدول (الشريحة 116)، ما الإجراء في الحالة 2 مع الرمز `+`؟
+
+أ) `Shift 6`
+ب) `Reduce 2`
+ج) `Accept`
+د) `Error`
+
+**الإجابة الصحيحة: ب**
+**التعليل:**
+- أ) خاطئ — `Shift 6` هو `ACTION[1, +]` (الحالة 1، ليس 2).
+- ب) **صحيح** — `ACTION[2, +] = R2`، تعني اختزل بالقاعدة 2: `E → T`.
+- ج) خاطئ — `Accept` فقط في الحالة 1 مع `$`.
+- د) خاطئ — الخانة ليست فارغة.
+
+---
+
+### السؤال 4 (hard) — تتبع خوارزمية
+بعد تطبيق `Reduce 4` (أي `T → F`) والمكدّس كان `[0, F, 3]`، ما الحالة التي تُدفع؟
+
+أ) 4
+ب) 2
+ج) 1
+د) 3
+
+**الإجابة الصحيحة: ب**
+**التعليل:**
+- نُطبّق: `GOTO[S', A]` حيث `S'` = رأس المكدّس بعد السحب = 0، و `A = T`.
+- أ) خاطئ.
+- ب) **صحيح** — `GOTO[0, T] = 2`.
+- ج) خاطئ — `GOTO[0, E] = 1`.
+- د) خاطئ — `GOTO[0, F] = 3`.
+
+---
+
+### السؤال 5 (medium) — تطبيق
+أيٌّ من التالي يُعدّ `Handle` في مكدّس يحتوي `$E+E*Id`؟
+
+أ) `E+E`
+ب) `Id`
+ج) `E*Id`
+د) `E+E*Id`
+
+**الإجابة الصحيحة: ب**
+**التعليل:**
+- `Handle` هي السلسلة **في أعلى المكدّس** التي تُطابق جانباً أيمن لقاعدة وتُختزل أولاً.
+- أ) خاطئ — ليست في أعلى المكدّس.
+- ب) **صحيح** — `Id` في أعلى المكدّس ويُطابق `F → Id`.
+- ج) خاطئ — ليست قاعدة مباشرة.
+- د) خاطئ — طويلة جداً.
+
+---
+
+### السؤال 6 (medium) — مقارنة
+ما الفرق بين جدول `ACTION` وجدول `GOTO`؟
+
+أ) `ACTION` للرموز غير الطرفية، `GOTO` للطرفية
+ب) `ACTION` للرموز الطرفية، `GOTO` للرموز غير الطرفية
+ج) كلاهما يستخدمان للرموز الطرفية فقط
+د) لا فرق بينهما
+
+**الإجابة الصحيحة: ب**
+**التعليل:**
+- أ) خاطئ — مقلوب.
+- ب) **صحيح** — `ACTION[s, terminal]` و `GOTO[s, nonterminal]`.
+- ج) خاطئ.
+- د) خاطئ — لكل منهما دور مختلف.
+
+---
+
+### السؤال 7 (hard) — سيناريو
+تحليل جملة تصل للحالة `[0, E, 1]` والدخل المتبقي `$`. ما الإجراء التالي؟
+
+أ) `Shift`
+ب) `Reduce`
+ج) `Accept`
+د) `Error`
+
+**الإجابة الصحيحة: ج**
+**التعليل:**
+- `ACTION[1, $] = Acc` — هذه هي الحالة النهائية.
+- أ) خاطئ — لا `Shift` مع `$` في الحالة 1.
+- ب) خاطئ.
+- ج) **صحيح**.
+- د) خاطئ.
+
+---
+
+### السؤال 8 (hard) — تتبع
+في تحليل `a * b + c $`، كم مرة تُطبَّق عملية `Reduce 6` (أي `F → Id`)؟
+
+أ) مرة واحدة
+ب) مرتان
+ج) ثلاث مرات
+د) لا تُطبَّق أبداً
+
+**الإجابة الصحيحة: ج**
+**التعليل:**
+- الجملة تحتوي ثلاثة `Id` هي `a`، `b`، `c`. كلٌّ منها يُختزل بـ `F → Id`.
+- ج) **صحيح** — ثلاث مرات.
+
+---
+
+### السؤال 9 (medium) — تطبيق
+ماذا تُعني `S7` في جدول `ACTION`؟
+
+أ) اختزل بالقاعدة 7
+ب) أزِح وانتقل للحالة 7
+ج) انتقل للحالة 7 عبر `GOTO`
+د) خطأ نحوي
+
+**الإجابة الصحيحة: ب**
+**التعليل:**
+- ب) **صحيح** — `S` = `Shift`، الرقم = رقم الحالة الجديدة.
+
+---
+
+### السؤال 10 (hard) — سيناريو
+المكدّس الحالي `[0, T, 2, *, 7]` والرمز التالي `b` (= `Id`). بالرجوع للجدول:
+
+أ) `Reduce 3`
+ب) `Shift 5`
+ج) `Accept`
+د) `Error`
+
+**الإجابة الصحيحة: ب**
+**التعليل:**
+- رأس المكدّس = الحالة 7، الرمز التالي = `Id`.
+- `ACTION[7, Id] = S5`.
+- ب) **صحيح**.
+
+---
+
+### السؤال 11 (medium) — مقارنة
+أيٌّ من العمليات التالية **لا** يُغيّر الرمز المقروء من الدخل؟
+
+أ) `Shift`
+ب) `Reduce`
+ج) `Accept`
+د) كلتا أ وج
+
+**الإجابة الصحيحة: ب**
+**التعليل:**
+- `Shift` تقرأ رمزاً جديداً. `Reduce` لا تُغيّر الرمز الحالي. `Accept` توقف التحليل.
+- ب) **صحيح**.
+
+---
+
+### السؤال 12 (hard) — تتبع خوارزمية
+بعد `Reduce 1` (أي `E → E + T`) في الخطوة 20 من التتبع، سُحبت ستة عناصر. لماذا ستة؟
+
+أ) لأن القاعدة رقمها 1
+ب) لأن `|RHS| = 3` رموز (E، +، T) × 2 = 6
+ج) لأن الجدول يُملي دائماً 6
+د) لأن المكدّس كان فارغاً
+
+**الإجابة الصحيحة: ب**
+**التعليل:**
+- ب) **صحيح** — `E → E + T` لها 3 رموز في RHS، وكل رمز يقابله حالة في المكدّس → 3 × 2 = 6 عناصر.
+
+---
+
+### السؤال 13 (medium) — تطبيق
+في جدول `GOTO`، ما الحالة التي ينتقل إليها المُحلِّل بعد اختزال `E` في الحالة 0؟
+
+أ) 2
+ب) 3
+ج) 1
+د) 0
+
+**الإجابة الصحيحة: ج**
+**التعليل:**
+- `GOTO[0, E] = 1`.
+- ج) **صحيح**.
+
+---
+
+### السؤال 14 (hard) — سيناريو مركّب
+
+**السيناريو:** تُعطى القاعدة `F → (E)` (القاعدة 5) وتُريد تطبيق `Reduce 5`.
+كم عنصراً يُسحب من المكدّس؟
+
+أ) 2
+ب) 4
+ج) 6
+د) 1
+
+**الإجابة الصحيحة: ج**
+**التعليل:**
+- `|RHS| = |(E)| = 3` رموز: `(`، `E`، `)` — والمكدّس يحفظ رمزاً + حالة لكل → `3 × 2 = 6`.
+- ج) **صحيح**.
+
+---
+
+### السؤال 15 (hard) — تطبيق
+أيٌّ من التالي **غير صحيح** بخصوص `LR Parser`؟
+
+أ) يستخدم اشتقاقاً أيمن معكوساً
+ب) المكدّس يحمل رموزاً وحالات
+ج) `GOTO` تُستعمل مع الرموز الطرفية
+د) `ACTION` تُحدّد Shift/Reduce/Accept/Error
+
+**الإجابة الصحيحة: ج**
+**التعليل:**
+- ج) **خاطئ (هو الإجابة)** — `GOTO` للرموز غير الطرفية، ليس الطرفية. هذا خطأ شائع.
+
+---
+
+### السؤال 16 (medium) — مقارنة
+ما الذي يُميّز `LR Parser` عن `Simple Shift-Reduce`؟
+
+أ) `LR` لا يستخدم مكدّساً
+ب) `LR` يعتمد جداول `ACTION/GOTO` لاتخاذ قرارات دقيقة
+ج) `Simple Shift-Reduce` أقوى
+د) كلاهما متطابقان
+
+**الإجابة الصحيحة: ب**
+**التعليل:**
+- ب) **صحيح** — الفرق هو وجود جداول منهجية تُزيل الغموض في قرار Shift/Reduce.
+
+---
+
+### السؤال 17 (hard) — تتبع
+ما الإجراء في الحالة 9 مع الرمز `*` بالرجوع لجدول الشريحة 116؟
+
+أ) `Shift 7`
+ب) `Reduce 1`
+ج) `Accept`
+د) `Error`
 
 **الإجابة الصحيحة: أ**
 **التعليل:**
-- **أ صحيحة:** `S(a)` → قاعدة `R⇒S` → `R(a)` → قاعدة `P⇒R` → `P(a)` → قاعدة `Q⇒P` → `Q(a)` → حقيقة ✅
-- **ب خاطئة:** تخطي `R` — لا توجد قاعدة مباشرة `P⇒S`.
-- **ج خاطئة:** لا توجد قاعدة مباشرة `Q⇒S`.
-- **د خاطئة:** لا توجد قاعدة مباشرة `Q⇒R`.
+- `ACTION[9, *] = S7`.
+- أ) **صحيح** — في الحالة 9 مع `*` نُزيح للحالة 7.
 
 ---
 
-### السؤال 7 (medium)
-لماذا يُعدّ الاستنتاج في `FOL` **نصف قابل للقرار** (`semidecidable`)؟
+### السؤال 18 (hard) — تتبع
+تحليل `Id $` بالقواعد الست المعطاة. كم مرة يحدث `Reduce` قبل `Accept`؟
 
-أ) لأن `FOL KB` يمكن أن يكون لانهائياً
-ب) لأننا نستطيع إثبات الجُمَل المعلولة في وقت منتهٍ لكن لا يمكننا إثبات عدم الاستلزام في وقت منتهٍ
-ج) لأن `Resolution` لا يعمل على `FOL`
-د) لأن `Unification` قد يفشل دائماً
+أ) مرتان
+ب) ثلاث مرات
+ج) أربع مرات
+د) مرة واحدة
 
 **الإجابة الصحيحة: ب**
 **التعليل:**
-- **ب صحيحة:** من مبرهنة هربراند + توشيرش + تورنج: إذا كانت `α` معلولة → إجراء `Propositionalization` سيجدها في `depth` منتهٍ. أما إذا لم تكن معلولة → الحلقة لا تتوقف أبداً.
-- **أ خاطئة:** `FOL KB` قد يكون منتهياً.
-- **ج خاطئة:** `Resolution` كاملة لـ `FOL`.
-- **د خاطئة:** `Unification` خوارزمية محددة تعطي إجابة.
+- `Id → F` (R6) → `F → T` (R4) → `T → E` (R2) → ثم Accept.
+- ب) **صحيح** — ثلاث مرات Reduce.
 
 ---
 
-### السؤال 8 (medium)
-ما هو `Skolem Function` ومتى يُستخدم بدلاً من `Skolem Constant`؟
+## الجزء الرابع: أسئلة تصحيح القواعد والاشتقاقات
 
-أ) `Skolem Function` تُستخدم دائماً بديلاً عن `Skolem Constant`
-ب) `Skolem Constant` تُستخدم عندما يكون `∃v` داخل `∀x`، و`Skolem Function` عندما يكون `∃v` وحده
-ج) `Skolem Function F(x)` تُستخدم عندما يكون `∃v` داخل نطاق `∀x`، لأن الوجود يعتمد على `x`
-د) كلاهما متكافئان ويمكن استخدام أي منهما
-
-**الإجابة الصحيحة: ج**
-**التعليل:**
-- **ج صحيحة:** إذا كان `∃y` داخل `∀x`، فـ `y` قد تعتمد على `x` — لذا نستخدم `F(x)`. إذا لم يكن `∃y` داخل أي `∀`، نستخدم ثابتاً `C₁`.
-- **أ خاطئة:** الاختيار يعتمد على السياق.
-- **ب خاطئة:** العلاقة معكوسة — `Function` عند وجود `∀` خارجي.
-- **د خاطئة:** ليسا متكافئَيْن — استخدام الخاطئ منهما ينتج نتيجة خاطئة.
+> غطِّ أنواع الأخطاء: منطقية، سوء فهم، غموض نحوي، عودية يسرى، اشتقاق خاطئ.
 
 ---
 
-### السيناريو 2: تصحيح pseudocode Forward Chaining
+### سؤال تصحيح 1 — `wrong_formula`
 
-**السيناريو:**
+**القاعدة/الاشتقاق التالي يحتوي خطأ:**
 ```text
-function BROKEN-FC-ASK(KB, α)
-  repeat
-    new ← {}
-    for each rule (p1∧...∧pn⇒q) in KB do
-      for each θ matching premises in KB do
-        q' ← SUBST(θ, q)
-        add q' to KB        // BUG LINE
-        if UNIFY(q', α) ≠ fail then return UNIFY(q', α)
-  until new is empty
-  return false
+عند Reduce بالقاعدة T → T * F، يُسحب من المكدّس 3 عناصر فقط.
 ```
 
----
-
-### السؤال 9 (hard) — السيناريو 2
-ما الخطأ الرئيسي في الكود؟
-
-أ) يجب استدعاء `STANDARDIZE-APART` قبل الحلقة
-ب) يُضاف `q'` مباشرة إلى `KB` بدلاً من `new` — يُفسد شرط التوقف ويُعيد معالجة نفس الحقائق
-ج) يجب استخدام `SUBST(θ, α)` بدلاً من `SUBST(θ, q)`
-د) شرط `UNIFY(q', α) ≠ fail` يجب أن يكون قبل الإضافة
-
-**الإجابة الصحيحة: ب**
-**التعليل:**
-- **ب صحيحة:** الإضافة المباشرة لـ `KB` تُفسد منطق «الدورة» — `new` يُستخدم لتجميع الحقائق الجديدة وفحص شرط التوقف (`until new is empty`). الإضافة المباشرة تعني أن `new` دائماً فارغ → توقف مبكر، أو حلقة لانهائية.
-- **أ خاطئة:** `STANDARDIZE-APART` غائب لكنه ليس الخطأ الرئيسي.
-- **ج خاطئة:** `SUBST(θ, q)` صحيح — نريد الاستنتاج `q` بعد التعيين.
-- **د خاطئة:** ترتيب الفحص صحيح في المبدأ.
-
----
-
-### السؤال 10 (hard)
-ما مشكلة `Occur Check` في `Unification` ولماذا يُهمَل أحياناً؟
-
-أ) يتسبب في فشل `Unification` الصحيح
-ب) `Occur Check` يتحقق إذا كان متحول `x` يظهر في `F(x)` — منعاً لتعيين `{x/F(x)}` الذي يُنشئ بنية لانهائية؛ يُهمَل لأنه يُبطئ `Prolog` وهذه الحالات نادرة
-ج) يمنع استخدام `Skolem Functions`
-د) لا يؤثر على صحة النتيجة على الإطلاق
-
-**الإجابة الصحيحة: ب**
-**التعليل:**
-- **ب صحيحة:** `UNIFY(x, F(x))` بدون `Occur Check` سيعيد `{x/F(x)}` — وهذا يعني `x = F(F(F(...)))` — بنية لانهائية. `Prolog` يُهمل `Occur Check` لأنه مكلف `O(n)` ونادر في التطبيق العملي.
-- **أ خاطئة:** `Occur Check` يمنع التعيين الخاطئ، لا الصحيح.
-- **ج خاطئة:** لا علاقة لـ `Occur Check` بـ `Skolem Functions`.
-- **د خاطئة:** بدون `Occur Check`، قد تُعيد `Unification` تعيينات لانهائية خاطئة.
-
----
-
-### السؤال 11 (medium)
-ما الفرق بين `Definite Clause` و`Horn Clause`؟
-
-أ) كلاهما نفس الشيء تماماً
-ب) `Horn Clause` تسمح بصفر حروف إيجابية (بند خاطئ تماماً)، `Definite Clause` تشترط وجود حرف إيجابي واحد بالضبط
-ج) `Definite Clause` أشمل من `Horn Clause`
-د) `Horn Clause` تُستخدم في `Forward Chaining` فقط
-
-**الإجابة الصحيحة: ب**
-**التعليل:**
-- **ب صحيحة:** `Horn Clause` = بند بحد أقصى حرف إيجابي واحد (قد يكون صفراً). `Definite Clause` = بند بحرف إيجابي واحد بالضبط (لا أقل ولا أكثر). `Definite Clauses ⊂ Horn Clauses`.
-- **أ خاطئة:** بينهما فرق في حالة الصفر حروف إيجابية.
-- **ج خاطئة:** العكس — `Horn` أشمل من `Definite`.
-- **د خاطئة:** `Horn Clauses` يُستخدم في `Prolog` (خلفي).
-
----
-
-### السؤال 12 (medium)
-أي تعيين يُعدّ `Most General Unifier (MGU)` بين `P(x, f(y))` و`P(a, f(b))`؟
-
-أ) `{x/a, y/b, x/a, y/b}` (تكرار)
-ب) `{x/a, y/b}`
-ج) `{x/a, y/b, z/c}` (إضافي)
-د) `fail` لأن `f(y) ≠ f(b)`
-
-**الإجابة الصحيحة: ب**
-**التعليل:**
-- **ب صحيحة:** `{x/a}` من مطابقة الوسيط الأول، `{y/b}` من مطابقة `f(y)` مع `f(b)`. البسيط والأعم.
-- **أ خاطئة:** التكرار غير ضروري ويُعقّد التعيين.
-- **ج خاطئة:** `z/c` غير مطلوب — `z` لم يظهر في التعبيرين.
-- **د خاطئة:** `f(y)` و`f(b)` يتوحّدان بوضع `y/b`.
-
----
-
-### السؤال 13 (hard)
-في `Backward Chaining`، ما مشكلة **الحلقات اللانهائية** وكيف تُحل؟
-
-أ) تنشأ بسبب `Unification` الفاشل — الحل: إعادة المحاولة مع قاعدة أخرى
-ب) تنشأ حين يصبح الهدف الحالي هدفاً فرعياً لنفسه (مباشرة أو بشكل دوري) — الحل: فحص الهدف الحالي مقابل كل الأهداف في المكدس
-ج) تنشأ فقط مع قواعد `Prolog` — الحل: استخدام `Cut (!)`
-د) لا يمكن حلها إلا بتحويل المسألة إلى `Forward Chaining`
-
-**الإجابة الصحيحة: ب**
-**التعليل:**
-- **ب صحيحة:** مثال: `P(x) :- Q(x), P(f(x))` — `Backward Chaining` قد يدخل حلقة توسيع `P` إلى ما لانهاية. الحل: فحص الهدف الجديد مقابل كل الأهداف في المكدس الحالي — إذا تطابق فتجنّبه.
-- **أ خاطئة:** `Unification` الفاشل يسبب `backtracking` لا حلقة.
-- **ج خاطئة:** الحلقات تحدث في `Backward Chaining` بشكل عام، `Cut` في `Prolog` حل مختلف.
-- **د خاطئة:** `Caching` و`loop detection` يحلاّن المشكلة دون تغيير المنهجية.
-
----
-
-### السؤال 14 (hard)
-لماذا مطابقة المقدمات التعاملية (`conjunctive premise matching`) هي مشكلة `NP-hard`؟
-
-أ) لأن `Unification` نفسه `NP-hard`
-ب) لأنها تكافئ مشكلة إشباع القيود (`CSP`) التي تشمل `3SAT` كحالة خاصة
-ج) لأن `KB` يمكن أن يكون لانهائياً
-د) لأن `GMP` يحتاج تعيينات لكل المتحولات
-
-**الإجابة الصحيحة: ب**
-**التعليل:**
-- **ب صحيحة:** كما يوضح مثال التلوين — إيجاد تعيين يُحقق مقدمة ذات `n` بند هو إيجاد حل `CSP` — و`CSP` يشمل `3SAT` → `NP-hard`.
-- **أ خاطئة:** `Unification` لزوجَيْن `O(n)` — ليس `NP-hard`.
-- **ج خاطئة:** حجم `KB` منفصل عن تعقيد المطابقة.
-- **د خاطئة:** عدد المتحولات وحده لا يسبب `NP-hardness`.
-
----
-
-### السؤال 15 (medium)
-ما الهدف من `Standardize Apart` في خوارزميات `Chaining`؟
-
-أ) تحسين سرعة `Unification`
-ب) منع تعارض أسماء المتحولات عند توحيد مقدمات القواعد المختلفة مع الحقائق
-ج) تحويل `KB` إلى `CNF`
-د) التحقق من صحة `GMP`
-
-**الإجابة الصحيحة: ب**
-**التعليل:**
-- **ب صحيحة:** إذا كانت قاعدتان تستخدمان نفس اسم المتحول `x`، يُنشأ خلط عند `Unification`. `Standardize Apart` يجعل كل نسخة من القاعدة لها متحولات فريدة (`x₁`، `x₂`، ...).
-- **أ خاطئة:** الغرض منطقي لا أدائي.
-- **ج خاطئة:** التحويل لـ `CNF` له خطوات منفصلة.
-- **د خاطئة:** صحة `GMP` تُثبَت رياضياً وليس بـ `Standardize Apart`.
-
----
-
-### السؤال 16 (hard)
-ما الفرق بين `Closed World Assumption (CWA)` و`Open World Assumption (OWA)`؟
-
-أ) `CWA` تفترض أن `KB` لا نهائية، `OWA` تفترضها منتهية
-ب) في `CWA`: ما لا يُثبت صحته يُعتبر خاطئاً؛ في `OWA`: عدم وجود الدليل لا يعني الخطأ
-ج) `CWA` مستخدمة في `FOL`، `OWA` في `Prolog`
-د) كلتاهما تُعطيان نفس النتيجة دائماً
-
-**الإجابة الصحيحة: ب**
-**التعليل:**
-- **ب صحيحة:** `Prolog` يستخدم `CWA` (`Negation as Failure`): `alive(joe)` يتحقق إذا فشل `dead(joe)`. في `FOL` العادي (`OWA`): عدم معرفة `dead(joe)` لا يعني نفيه.
-- **أ خاطئة:** الفرق في معالجة الجهل، ليس في حجم `KB`.
-- **ج خاطئة:** العكس — `Prolog` يستخدم `CWA`، `FOL` الخالص يستخدم `OWA`.
-- **د خاطئة:** يختلفان في الاستنتاج من الغياب.
-
----
-
-### السؤال 17 (hard)
-عند تطبيق `Resolution` لإثبات `α` من `KB`، ماذا نضيف ولماذا؟
-
-أ) نضيف `α` إلى `KB` ونتحقق من الاتساق
-ب) نضيف `¬α` إلى `KB`، نحوّل كل شيء إلى `CNF`، ثم نطبّق `Resolution` حتى نصل `□`
-ج) نضيف `α` بشكل مباشر ونتحقق من تولّده بـ `GMP`
-د) نحوّل `KB` إلى `CNF` فقط دون إضافة أي شيء
-
-**الإجابة الصحيحة: ب**
-**التعليل:**
-- **ب صحيحة:** منهجية الدحض (`Refutation`): إذا أردنا إثبات `α`، نفترض العكس `¬α`، وإذا أوصلنا `KB ∧ ¬α` إلى تناقض (`□`) فهذا يعني أن `¬α` مستحيل → `α` صحيحة.
-- **أ خاطئة:** إضافة `α` لا تُثبتها.
-- **ج خاطئة:** `GMP` أداة مختلفة.
-- **د خاطئة:** بدون `¬α`، `Resolution` لا يعمل كإثبات.
-
----
-
-### السؤال 18 (hard)
-في `Prolog`، ما معنى `alive(X) :- not dead(X)` وما مشكلته المنطقية؟
-
-أ) يعني أن `X` حي ⟺ غير ميت — وهو تعريف كامل ومثالي
-ب) يعني أن `X` حي إذا **فشل إثبات** `dead(X)` — يُنتج استنتاجات خاطئة إذا كانت `KB` غير مكتملة
-ج) يُطبّق `UI` على `not dead(X)` لجميع `X`
-د) يحول `not dead(X)` إلى `¬dead(X)` في `FOL` مباشرة
-
-**الإجابة الصحيحة: ب**
-**التعليل:**
-- **ب صحيحة:** `Negation as Failure` = `not dead(joe)` تنجح إذا فشل `Prolog` في إثبات `dead(joe)`. المشكلة: إذا لم نعرف إذا كان `joe` ميتاً أم لا (ليس في `KB`)، `Prolog` يعتبره حياً — وهذا `CWA` وليس `FOL` الحقيقي.
-- **أ خاطئة:** `CWA` تُعطي نتائج خاطئة في `Open World` — لذا ليست مثالية.
-- **ج خاطئة:** `Prolog` لا يطبّق `UI` هنا.
-- **د خاطئة:** `not` في `Prolog` ≠ `¬` في `FOL` — فرق أساسي.
-
----
-
-## الجزء الرابع: أسئلة تصحيح الخوارزميات (Pseudocode Debug)
-
-> غطِّ أنواع الأخطاء: منطقية، سوء فهم، heuristic خاطئ، حلقة لا نهائية.
-
----
-
-### سؤال تصحيح 1 — نوع: `logic`
-
-**الكود التالي يحتوي خطأ:**
-```text
-// Existential Instantiation - BUGGY VERSION
-function EI(KB, sentence):
-  if sentence is of form ExistsV(v, alpha):
-    k ← choose_any_constant_from(KB)   // BUG: using existing constant
-    new_sentence ← SUBST({v/k}, alpha)
-    KB.remove(sentence)
-    KB.add(new_sentence)
-    return KB
-  return KB
-```
-
-**اكتشف الخطأ:** يستخدم ثابتاً **موجوداً** في `KB` بدلاً من إنشاء ثابت `Skolem` **جديد كلياً**.
+**اكتشف الخطأ:** الطالب نسي أن المكدّس يحمل **زوجاً** (رمز + حالة) لكل موقع، ليس رمزاً واحداً.
 
 **التصحيح:**
 ```text
-// Existential Instantiation - CORRECT VERSION
-function EI(KB, sentence):
-  if sentence is of form ExistsV(v, alpha):
-    k ← new_unique_constant()   // FIXED: create fresh Skolem constant never seen before
-    new_sentence ← SUBST({v/k}, alpha)
-    KB.remove(sentence)
-    KB.add(new_sentence)
-    return KB
-  return KB
+|RHS(T → T * F)| = 3 رموز
+العناصر المسحوبة = 2 × 3 = 6 عناصر
 ```
 
 **شرح الحل:**
-1. استخدام ثابت موجود يعني **مشاركة الهوية** — قد يُنتج `Crown(John)` بدلاً من `Crown(C₁)` مما يُضيف معلومة خاطئة
-2. `Skolem constant` يجب أن يكون **جديداً تماماً** لا يُشارك هويته مع أي شيء معروف
-3. القاعدة: «ثابت لا يظهر في أي مكان آخر في `KB`»
+1. كل موقع في المكدّس يحمل رمزاً (`T`، `*`، `F`) وحالة مقترنة به.
+2. لمسح `n` رموز يجب سحب `2n` عنصراً.
+3. القاعدة هنا `n = 3` → سحب `6` عناصر.
 
 ---
 
-### سؤال تصحيح 2 — نوع: `infinite_loop`
+### سؤال تصحيح 2 — `misconception`
 
-**الكود التالي يحتوي خطأ:**
+**القاعدة/الاشتقاق التالي يحتوي خطأ:**
 ```text
-// Backward Chaining - BUGGY VERSION
-function BC-ASK(KB, goals, theta):
-  if goals is empty: return {theta}
-  q' ← SUBST(theta, FIRST(goals))
-  for each rule (premises => head) in KB:
-    theta' ← UNIFY(head, q')
-    if theta' != fail:
-      new_goals ← [premises | REST(goals)]  // BUG: no standardize apart
-      answers ← BC-ASK(KB, new_goals, COMPOSE(theta', theta))
-  return answers
+بعد تطبيق Reduce، نقرأ الرمز التالي من الدخل قبل استعلام GOTO.
 ```
 
-**اكتشف الخطأ:** غياب `STANDARDIZE-APART` — متحولات القواعد المختلفة تتعارض مع بعضها.
+**اكتشف الخطأ:** الرمز الحالي `a` **لا يُغيَّر** بعد `Reduce`. القراءة تحدث فقط بعد `Shift`.
 
 **التصحيح:**
 ```text
-// Backward Chaining - CORRECT VERSION
-function BC-ASK(KB, goals, theta):
-  if goals is empty: return {theta}
-  q' ← SUBST(theta, FIRST(goals))
-  for each rule r in KB:
-    (p1,...,pn => q) ← STANDARDIZE-APART(r)   // FIXED: rename variables
-    theta' ← UNIFY(q, q')
-    if theta' != fail:
-      new_goals ← [p1,...,pn | REST(goals)]
-      answers ← BC-ASK(KB, new_goals, COMPOSE(theta', theta))
-  return answers
+بعد Reduce:
+1. اسحب 2n عنصراً
+2. ادفع (LHS, GOTO[S', LHS])
+3. ارجع لاستعلام ACTION مع نفس الرمز a
 ```
 
 **شرح الحل:**
-1. بدون `STANDARDIZE-APART`، قاعدة `Parent(x,y) ⇒ Ancestor(x,y)` وقاعدة `Ancestor(x,z) ∧ Ancestor(z,y) ⇒ Ancestor(x,y)` تتشاركان `x`، `y` → تعارض
-2. `STANDARDIZE-APART` يعيد تسمية كل نسخة باستخدام متحولات فريدة (`x₁`, `y₁`, `x₂`, `y₂`...)
-3. يضمن عدم التداخل بين تعيينات القواعد المختلفة
+1. `Shift` هي العملية الوحيدة التي "تستهلك" رمزاً من الدخل.
+2. `Reduce` تعيد تشكيل المكدّس دون تقدّم في الدخل.
+3. الخلط بين الاثنتين خطأ مفاهيمي شائع جداً.
 
 ---
 
-### سؤال تصحيح 3 — نوع: `misconception`
+### سؤال تصحيح 3 — `logic`
 
-**الكود التالي يحتوي خطأ:**
+**القاعدة/الاشتقاق التالي يحتوي خطأ:**
 ```text
-// CNF Conversion - BUGGY Skolemization
-// Input: ∀x ∃y Loves(x,y)
-// Step: Skolemize ∃y
-result ← SUBST({y/C1}, Loves(x,y))  // BUG: using Skolem constant instead of function
-// Result: Loves(x, C1)   -- WRONG!
+ACTION[s, a] = S7 تعني: اختزل بالقاعدة رقم 7.
 ```
 
-**اكتشف الخطأ:** استُخدم **ثابت سكولم** بينما `∃y` موجود **داخل نطاق** `∀x` — يجب استخدام **دالة سكولم** `F(x)`.
+**اكتشف الخطأ:** الحرف `S` يعني `Shift` وليس `Reduce`.
 
 **التصحيح:**
 ```text
-// CNF Conversion - CORRECT Skolemization
-// Input: ∀x ∃y Loves(x,y)
-// Step: Skolemize ∃y (which is inside ∀x scope)
-result ← SUBST({y/F(x)}, Loves(x,y))  // FIXED: Skolem function F depending on x
-// Result: Loves(x, F(x))   -- CORRECT
-// Meaning: For each x, there exists SOME y (which may depend on x) that x loves
+S7 = Shift وانتقل للحالة 7 (ادفع الرمز الحالي والحالة 7 على المكدّس)
+R7 = Reduce باستخدام القاعدة رقم 7
 ```
 
 **شرح الحل:**
-1. `∀x ∃y Loves(x,y)` يعني «لكل `x` يوجد `y` (قد يختلف حسب `x`) يحبه».
-2. استخدام `C₁` يعني «يوجد شخص واحد يحبه **الكل**» — معنى أضيق وخاطئ.
-3. القاعدة: إذا كان `∃` داخل `∀v₁,...,vₙ` → استخدم دالة سكولم `F(v₁,...,vₙ)`.
+1. في جدول `ACTION`: `S` = `Shift`، `R` = `Reduce`، `Acc` = `Accept`، فارغ = `Error`.
+2. الرقم بعد `S` هو **رقم الحالة** الجديدة.
+3. الرقم بعد `R` هو **رقم القاعدة** في قائمة الإنتاجات.
 
 ---
 
-### سؤال تصحيح 4 — نوع: `logic`
+### سؤال تصحيح 4 — `wrong_derivation`
 
-**الكود التالي يحتوي خطأ:**
+**القاعدة/الاشتقاق التالي يحتوي خطأ:**
 ```text
-// Forward Chaining - BUGGY termination check
-function FC-ASK(KB, alpha):
-  repeat
-    new ← {}
-    for each rule in KB:
-      q' ← derive_conclusion(rule, KB)
-      if q' not in KB:
-        add q' to KB           // BUG: should add to 'new', not KB
-        if UNIFY(q', alpha): return UNIFY(q', alpha)
-  until KB has not changed    // BUG: this condition never activates correctly
-  return false
+لاختزال T → T * F باستخدام GOTO، نكتب: GOTO[s, F]
 ```
 
-**اكتشف الخطأ:** إضافة `q'` مباشرة لـ `KB` بدلاً من `new` يُفسد آلية الكشف عن ثبات `KB` (أي هل أُضيف شيء جديد في هذه الدورة).
+**اكتشف الخطأ:** بعد `Reduce T → T * F`، الرمز الذي يُدفع هو `T` (الجانب الأيسر)، وليس `F`.
 
 **التصحيح:**
 ```text
-// Forward Chaining - CORRECT VERSION
-function FC-ASK(KB, alpha):
-  repeat
-    new ← {}                              // FIXED: separate accumulator
-    for each rule in KB:
-      q' ← derive_conclusion(rule, KB)
-      if q' not in KB and q' not in new:  // FIXED: check both
-        add q' to new                     // FIXED: add to new, not KB
-        if UNIFY(q', alpha) != fail: return UNIFY(q', alpha)
-    add new to KB                         // FIXED: batch update after full scan
-  until new is empty                      // FIXED: correct termination
-  return false
+A = LHS(T → T * F) = T
+GOTO[S', T]   // حيث S' هي الحالة الجديدة في رأس المكدّس بعد السحب
 ```
 
 **شرح الحل:**
-1. `new` يتتبع ما اشتُقّ في هذه الدورة — إذا كان فارغاً عند نهاية الدورة: لا جديد → توقّف
-2. الإضافة المباشرة لـ `KB` تُغيّر الـ `KB` أثناء المسح → نتائج غير محددة
-3. الإضافة الدفعية (`add new to KB`) بعد المسح الكامل تضمن الاتساق
+1. بعد سحب `2n` عنصر، الحالة الجديدة في رأس المكدّس هي `S'`.
+2. نُدفع `(T, GOTO[S', T])`.
+3. دائماً استخدم **LHS** مع `GOTO` وليس أي رمز من RHS.
 
 ---
 
-### سؤال تصحيح 5 — نوع: `wrong_heuristic`
+### سؤال تصحيح 5 — `ambiguous_grammar`
 
-**الكود التالي يحتوي خطأ:**
+**القاعدة/الاشتقاق التالي يحتوي خطأ:**
 ```text
-// Unification - BUGGY (missing variable check)
-function UNIFY(x, y, theta):
-  if theta = fail: return fail
-  if x = y: return theta                    // Correct: identical terms
-  if IS-VARIABLE(x): return UNIFY-VAR(x, y, theta)
-  if IS-VARIABLE(y): return UNIFY-VAR(y, x, theta)
-  if IS-COMPOUND(x) and IS-COMPOUND(y):
-    return UNIFY(ARGS(x), ARGS(y),
-                 UNIFY(OP(x), OP(y), theta))
-  return fail
-
-function UNIFY-VAR(var, x, theta):
-  if {var/val} in theta: return UNIFY(val, x, theta)  // Apply existing binding
-  if {x/val} in theta: return UNIFY(var, val, theta)  // Apply existing binding
-  // BUG: missing Occur Check
-  return EXTEND(theta, var, x)
+القواعد:
+E → E + E
+E → E * E
+E → Id
+هذه القواعد مناسبة تماماً لـ LR Parser بدون تعديل.
 ```
 
-**اكتشف الخطأ:** غياب `Occur Check` — يسمح بتعيين `{x/F(x)}` مما ينتج بنية لانهائية.
+**اكتشف الخطأ:** هذه القواعد **غامضة** (`Ambiguous`) — تُنتج تعارضات `Shift/Reduce` في جدول `LR`.
 
 **التصحيح:**
 ```text
-function UNIFY-VAR(var, x, theta):
-  if {var/val} in theta: return UNIFY(val, x, theta)
-  if {x/val} in theta: return UNIFY(var, val, theta)
-  if OCCURS-IN(var, x):                   // FIXED: Occur Check
-    return fail                           // Prevent x = F(x) infinite structure
-  return EXTEND(theta, var, x)
+القواعد المعدَّلة (تُراعي الأولوية والترابطية):
+E → E + T
+E → T
+T → T * F
+T → F
+F → (E)
+F → Id
 ```
 
 **شرح الحل:**
-1. `OCCURS-IN(x, F(x))` = هل يظهر `x` داخل `F(x)`؟ — نعم → `fail`
-2. بدونه: `{x/F(x)}` → `x = F(F(F(...)))` → لانهاية
-3. `Prolog` يُهمله للأداء — صحيح في الغالب لكنه خطأ نظري
+1. القواعد الغامضة تُسبب `Shift/Reduce Conflict` في جداول `LR`.
+2. الحل هو تقسيم القواعد لمستويات (`E`، `T`، `F`) لتعكس أولوية العمليات.
+3. هذا بالضبط ما فعلته المحاضرة في القواعد 1–6.
 
 ---
 
-### سؤال تصحيح 6 — نوع: `misconception`
-
-**الكود التالي يحتوي خطأ:**
-```text
-// Resolution Step - BUGGY
-function RESOLVE(c1, c2):
-  // c1 = {L1, L2, ..., Lk}
-  // c2 = {M1, M2, ..., Mn}
-  for each Li in c1:
-    for each Mj in c2:
-      if Li = NOT(Mj):                   // BUG: exact syntactic equality only
-        resolvent ← (c1 - {Li}) ∪ (c2 - {Mj})
-        return resolvent
-  return null
-```
-
-**اكتشف الخطأ:** المقارنة `Li = NOT(Mj)` تعمل فقط عند التطابق التام — تُخفق مع المتحولات (مثل `Rich(x)` و`¬Rich(Ken)`).
-
-**التصحيح:**
-```text
-// Resolution Step - CORRECT (with Unification)
-function RESOLVE(c1, c2):
-  for each Li in c1:
-    for each Mj in c2:
-      theta ← UNIFY(Li, NOT(Mj))        // FIXED: use Unification
-      if theta != fail:
-        resolvent ← SUBST(theta, (c1 - {Li}) ∪ (c2 - {Mj}))  // FIXED: apply substitution
-        return resolvent
-  return null
-```
-
-**شرح الحل:**
-1. `FOL Resolution` يعتمد على `Unification` — ليس مطابقة تامة
-2. `UNIFY(Rich(x), NOT(NOT Rich(Ken)))` = `UNIFY(Rich(x), Rich(Ken))` = `{x/Ken}` → ينجح
-3. يجب تطبيق `θ` على الـ `resolvent` لاستبدال المتحولات
-
----
-
-## الجزء الرابع: تمارين تطبيقية
+## الجزء الرابع: تمارين إضافية من إعداد الدليل
 
 > **هذه تمارين إضافية من إعداد الدليل للتدريب** — ليست في المحاضرة الأصلية.
 
 ---
 
-### تمرين 1: تطبيق UI وEI — `fill_gaps`
+### تمرين 1: تتبع جزئي — `fill_gaps`
 
 **السيناريو / المطلوب:**
-لدينا الجُمَل التالية:
-```
-(A) ∀x ∀y Parent(x,y) ∧ Parent(y,z) ⇒ Grandparent(x,z)
-(B) Parent(Tom, Bob)
-(C) Parent(Bob, Ann)
-(D) ∃x Happy(x) ∧ Rich(x)
-```
+بالنظر للجدول التالي (جزء من تحليل `Id + Id $`):
 
-**المطلوب:**
-1. طبّق `UI` على `(A)` بوضع `x=Tom`, `y=Bob`, `z=Ann` واكتب الناتج
-2. طبّق `EI` على `(D)` واكتب الناتج مع اسم الثابت المناسب
-3. من (1) وحقيقتَي `(B)` و`(C)` طبّق `GMP` واستنتج الناتج
-
-**نموذج الحل:**
-1. `SUBST({x/Tom, y/Bob, z/Ann}, (A))` → `Parent(Tom,Bob) ∧ Parent(Bob,Ann) ⇒ Grandparent(Tom,Ann)`
-2. `SUBST({x/C₁}, (D))` → `Happy(C₁) ∧ Rich(C₁)` (حيث `C₁` ثابت سكولم جديد)
-3. `GMP`: المقدمات `Parent(Tom,Bob)` و`Parent(Bob,Ann)` تطابق `Parent(x,y)` و`Parent(y,z)` بـ `θ={x/Tom,y/Bob,z/Ann}` → الناتج: `Grandparent(Tom,Ann)` ✅
-
----
-
-### تمرين 2: تطبيق Unification — `fill_gaps`
-
-**السيناريو / المطلوب:**
-أوجد `θ` لكل زوج أو قل `fail`:
-
-| # | التعبير الأول | التعبير الثاني | θ |
-| --- | --- | --- | --- |
-| 1 | `Loves(x, Jane)` | `Loves(Bob, y)` | ؟ |
-| 2 | `Father(x)` | `Father(Father(y))` | ؟ |
-| 3 | `P(x, f(x))` | `P(a, f(a))` | ؟ |
-| 4 | `Q(x, x)` | `Q(a, b)` (حيث `a ≠ b`) | ؟ |
-
-**المطلوب:** أكمل العمود الأخير.
-
-**نموذج الحل:**
-
-| # | θ | الشرح |
+| المكدّس | الدخل | الإجراء |
 | --- | --- | --- |
-| 1 | `{x/Bob, y/Jane}` | `x=Bob` من الأول، `y=Jane` من الثاني |
-| 2 | `{x/Father(y)}` | `Father(x) = Father(Father(y))` → `x=Father(y)` |
-| 3 | `{x/a}` | `P(x,f(x))` مع `P(a,f(a))` → `x=a`، ثم `f(a)=f(a)` ✅ |
-| 4 | `fail` | `x=a` من الوسيط الأول و`x=b` من الثاني تعارض (a≠b) |
-
----
-
-### تمرين 3: تحويل إلى CNF — `code_fix`
-
-**السيناريو / المطلوب:**
-حوّل الجملة التالية إلى `CNF` خطوة بخطوة:
-`∀x [Bird(x) ⇒ ∃y Wings(y) ∧ HasWings(x,y)]`
-
-**المطلوب:** أكمل التحويل بالخطوات الست.
-
-**نموذج الحل:**
-1. **حذف ⇒:** `∀x [¬Bird(x) ∨ ∃y Wings(y) ∧ HasWings(x,y)]`
-2. **نقل ¬ للداخل:** لا تغيير (لا `¬∀` أو `¬∃`)
-3. **توحيد المتحولات:** `∀x [¬Bird(x) ∨ ∃z Wings(z) ∧ HasWings(x,z)]`
-4. **Skolemize:** `∃z` داخل `∀x` → `z = F(x)`: `∀x [¬Bird(x) ∨ Wings(F(x)) ∧ HasWings(x,F(x))]`
-5. **حذف ∀:** `¬Bird(x) ∨ [Wings(F(x)) ∧ HasWings(x,F(x))]`
-6. **توزيع ∧ على ∨:** `[¬Bird(x) ∨ Wings(F(x))] ∧ [¬Bird(x) ∨ HasWings(x,F(x))]`
-
-**الناتج النهائي (بندان):**
-- `¬Bird(x) ∨ Wings(F(x))`
-- `¬Bird(x) ∨ HasWings(x,F(x))`
-
----
-
-### تمرين 4: Forward Chaining يدوي — `search_trace`
-
-**السيناريو / المطلوب:**
-```
-KB:
-  ∀x Wet(x) ⇒ Slippery(x)
-  ∀x Rain(x) ⇒ Wet(x)
-  Rain(street)
-```
-الهدف: `Slippery(street)`
+| `$0` | `Id + Id $` | ؟ |
+| `$0 Id 5` | `+ Id $` | ؟ |
+| `$0 F 3` | `+ Id $` | ؟ |
 
 **المطلوب:**
-1. أكمل جدول التسلسل الأمامي
-2. ما الاستنتاج النهائي؟
-
-**جدول ناقص للطالب:**
-
-| الدورة | القاعدة | θ | الاستنتاج الجديد |
-| --- | --- | --- | --- |
-| 1 | `Rain(x)⇒Wet(x)` | ؟ | ؟ |
-| 2 | ؟ | ؟ | ؟ |
+1. أكمل عمود الإجراء.
+2. ما القاعدة المطبّقة في الخطوة 2؟
+3. ما قيمة `GOTO[0, F]`؟
 
 **نموذج الحل:**
-
-| الدورة | القاعدة | θ | الاستنتاج الجديد |
-| --- | --- | --- | --- |
-| 1 | `Rain(x)⇒Wet(x)` | `{x/street}` | `Wet(street)` |
-| 2 | `Wet(x)⇒Slippery(x)` | `{x/street}` | `Slippery(street)` ✅ |
-
-**الاستنتاج:** `Slippery(street)` في دورتين.
+1. الخطوة 1: `ACTION[0, Id] = S5` → `Shift 5`
+   الخطوة 2: `ACTION[5, +] = R6` → `Reduce 6` (القاعدة `F → Id`)
+   الخطوة 3: `ACTION[3, +] = R4` → `Reduce 4` (القاعدة `T → F`)
+2. القاعدة 6: `F → Id`
+3. `GOTO[0, F] = 3`
 
 ---
 
-### تمرين 5: تطبيق Skolemization — `fill_gaps`
-
-**السيناريو / المطلوب:**
-أعط `Skolem term` المناسب لكل `∃`:
-
-1. `∃x P(x)` (بدون `∀` خارجي)
-2. `∀y ∃x Loves(x,y)` (∃x داخل ∀y)
-3. `∀a ∀b ∃c Between(a,c,b)` (∃c داخل ∀a ∀b)
-4. `∀x [∃y Father(y,x) ∧ ∃z Mother(z,x)]` (اثنان ∃ داخل ∀x)
-
-**نموذج الحل:**
-1. `C₁` (ثابت سكولم جديد)
-2. `F(y)` (دالة سكولم في `y`)
-3. `G(a,b)` (دالة سكولم في `a` و`b`)
-4. `∃y → F(x)`، `∃z → H(x)` (دالتان مختلفتان لكل وجودي مستقل)
-
----
-
-### تمرين 6: تحليل Backward Chaining — `scenario`
+### تمرين 2: بناء جدول جزئي — `parse_table_construction`
 
 **السيناريو:**
+القواعد البسيطة:
+```text
+(1) S → a S b
+(2) S → ε
 ```
-KB:
-  Mammal(x) ⇒ Animal(x)
-  Dog(x) ⇒ Mammal(x)
-  Dog(Rex)
-```
-الهدف: `Animal(Rex)`
 
-**المطلوب:** ارسم شجرة `Backward Chaining` كاملة بما فيها التعيينات.
+**المطلوب:**
+1. اشرح لماذا هذه القواعد **ليست** مناسبة لـ `LR(0)` البسيط.
+2. ما نوع الـ `LR Parser` الذي يُمكن أن يتعامل معها؟
 
 **نموذج الحل:**
+1. `S → ε` تُولِّد `Reduce/Shift Conflict` في `LR(0)` لأن المُحلِّل لا يعرف متى يُطبّق الاختزال الفارغ.
+2. `SLR(1)` أو `LALR(1)` — تستخدم رمز المتابعة (`Follow`) لتحديد وقت الاختزال.
+
+---
+
+### تمرين 3: تحديد الإجراء — `table_fill`
+
+**السيناريو:**
+بالرجوع لجدول الشريحة 116:
+
+**المطلوب:** أكمل الجدول التالي:
+
+| الحالة | الرمز | الإجراء |
+| --- | --- | --- |
+| 0 | Id | ؟ |
+| 5 | $ | ؟ |
+| 11 | R5 | ؟ |
+| 1 | $ | ؟ |
+| 4 | ( | ؟ |
+
+**نموذج الحل:**
+
+| الحالة | الرمز | الإجراء |
+| --- | --- | --- |
+| 0 | Id | S5 |
+| 5 | $ | R6 |
+| 11 | R5 | خطأ — `R5` ليس رمز دخل. يجب قراءة السؤال: `ACTION[11, $] = R5` |
+| 1 | $ | Acc |
+| 4 | ( | S4 |
+
+---
+
+### تمرين 4: تحليل الأخطاء — `code_fix`
+
+**السيناريو:**
+طالب كتب الخطوات التالية لتحليل `Id $`:
+
+```text
+Stack: [0]        Input: Id $    → Shift 5
+Stack: [0,Id,5]   Input: $       → Reduce 4  (T → F)  ← خطأ!
+Stack: [0,T,2]    Input: $       → Reduce 2  (E → T)
+Stack: [0,E,1]    Input: $       → Accept
 ```
-Animal(Rex)                          ← الهدف
-  ↓ [Mammal(x)⇒Animal(x), θ={x/Rex}]
-Mammal(Rex)                          ← هدف فرعي
-  ↓ [Dog(x)⇒Mammal(x), θ={x/Rex}]
-Dog(Rex)                             ← حقيقة في KB ✅
+
+**المطلوب:** اكتشف الخطأ في الخطوة 2 وصحّحه.
+
+**نموذج الحل:**
+- الخطأ: في الخطوة 2 طبّق `Reduce 4` مباشرةً على `Id`، لكن يجب أولاً `Reduce 6` لتحويل `Id → F`.
+- التصحيح:
+```text
+Stack: [0]         Input: Id $  → Shift 5
+Stack: [0,Id,5]    Input: $     → Reduce 6 (F → Id) ← الصحيح أولاً
+Stack: [0,F,3]     Input: $     → Reduce 4 (T → F)
+Stack: [0,T,2]     Input: $     → Reduce 2 (E → T)
+Stack: [0,E,1]     Input: $     → Accept
 ```
-**التعيين الكلي:** `{x/Rex}`
-**النتيجة:** `Animal(Rex)` مثبتة.
+
+---
+
+### تمرين 5: اكتشف الخطأ — `grammar_transform`
+
+**السيناريو:**
+القواعد التالية تُعاني من `Left Recursion`:
+```text
+E → E + T | T
+T → T * F | F
+```
+
+**المطلوب:**
+1. لماذا `Left Recursion` مشكلة في `Top-Down` ولكن **ليست** مشكلة في `LR Parser`؟
+
+**نموذج الحل:**
+1. في `Top-Down (LL)` تُسبب حلقة لا نهائية لأن المُحلِّل يُحاول توسيع `E` ببداية `E` مجدداً.
+2. في `LR` يعمل المُحلِّل بالاتجاه المعكوس (يقرأ أولاً، ثم يُختزل)، فلا تحدث حلقة — العوديَّة اليسرى مُعالَجة بشكل طبيعي.
+
+---
+
+### تمرين 6: سيناريو كامل — `scenario`
+
+**السيناريو:**
+مُحلِّل `LR` يعمل على جملة `( Id )$`. القواعد:
+```text
+(1) E → E + T   (2) E → T   (3) T → T * F
+(4) T → F       (5) F → (E) (6) F → Id
+```
+
+**المطلوب:** نفّذ كامل خطوات التحليل موضّحاً المكدّس والدخل والإجراء.
+
+**نموذج الحل:**
+
+| المكدّس | الدخل | الإجراء |
+| --- | --- | --- |
+| `0` | `(Id)$` | `S4` — `ACTION[0,(] = S4` |
+| `0 ( 4` | `Id)$` | `S5` — `ACTION[4,Id] = S5` |
+| `0 ( 4 Id 5` | `)$` | `R6` — `F → Id` |
+| `0 ( 4 F 3` | `)$` | `R4` — `T → F` (`GOTO[4,F]=3`) |
+| `0 ( 4 T 2` | `)$` | `R2` — `E → T` (`GOTO[4,T]=2`) |
+| `0 ( 4 E 8` | `)$` | `S11` — `ACTION[8,)] = S11` |
+| `0 ( 4 E 8 ) 11` | `$` | `R5` — `F → (E)` (سحب 6) |
+| `0 F 3` | `$` | `R4` — `T → F` |
+| `0 T 2` | `$` | `R2` — `E → T` |
+| `0 E 1` | `$` | **`Acc`** ✅ |
 
 ---
 
 ## الجزء الرابع: تمارين تحليل وتطبيق
 
----
-
-### تمرين 1: إكمال جدول Unification — `table_fill`
-
-**السيناريو:**
-أكمل الجدول:
-
-| p | q | θ |
-| --- | --- | --- |
-| `Knows(x, y)` | `Knows(John, Mary)` | ؟ |
-| `Knows(x, x)` | `Knows(John, Mary)` | ؟ |
-| `Ancestor(x, Bob)` | `Ancestor(Father(y), Bob)` | ؟ |
-| `f(x, g(x))` | `f(a, g(a))` | ؟ |
-| `P(x, f(x, y))` | `P(f(z), f(f(z), z))` | ؟ |
-
-**نموذج الحل:**
-
-| p | q | θ |
-| --- | --- | --- |
-| `Knows(x, y)` | `Knows(John, Mary)` | `{x/John, y/Mary}` |
-| `Knows(x, x)` | `Knows(John, Mary)` | `fail` (x=John وx=Mary تعارض) |
-| `Ancestor(x, Bob)` | `Ancestor(Father(y), Bob)` | `{x/Father(y)}` |
-| `f(x, g(x))` | `f(a, g(a))` | `{x/a}` |
-| `P(x, f(x, y))` | `P(f(z), f(f(z), z))` | `{x/f(z), y/z}` |
+> تمارين تحليلية إضافية — بناء جداول تحليل، سيناريوهات، ملء مخططات.
 
 ---
 
-### تمرين 2: تتبع Resolution — `resolution_steps`
+### تمرين تحليل 1: مقارنة الإجراءات — `written_analysis`
 
 **السيناريو:**
-```
-KB:
-  ∀x Human(x) ⇒ Mortal(x)
-  Human(Socrates)
-الهدف: Mortal(Socrates)
-```
-
-**المطلوب:** أثبت `Mortal(Socrates)` بـ `Resolution` خطوة بخطوة.
-
-**نموذج الحل:**
-
-**الخطوة 1: تحويل KB إلى CNF:**
-- `¬Human(x) ∨ Mortal(x)` (من القاعدة)
-- `Human(Socrates)` (حقيقة)
-- `¬Mortal(Socrates)` (نفي الهدف)
-
-**الخطوة 2: تطبيق Resolution:**
-
-| الخطوة | البند 1 | البند 2 | θ | الناتج |
-| --- | --- | --- | --- | --- |
-| 1 | `¬Human(x) ∨ Mortal(x)` | `Human(Socrates)` | `{x/Socrates}` | `Mortal(Socrates)` |
-| 2 | `Mortal(Socrates)` | `¬Mortal(Socrates)` | `{}` | `□` (فارغة) ✅ |
-
-**النتيجة:** تناقض → `Mortal(Socrates)` مثبتة.
-
----
-
-### تمرين 3: مقارنة Forward/Backward Chaining — `written_analysis`
-
-**السيناريو:**
-لديك `KB` بـ 1000 حقيقة و50 قاعدة. الهدف `G` يتطلب سلسلة من 5 قواعد من الحقائق إليه.
-
-**المطلوب:** قارن `Forward Chaining` و`Backward Chaining` لهذا السيناريو من حيث: الكفاءة، الاستنتاجات المولّدة، التوجّه للهدف.
-
-**نموذج الحل:**
-
-| المعيار | `Forward Chaining` | `Backward Chaining` |
-| --- | --- | --- |
-| **الاستنتاجات المولّدة** | قد يولّد مئات الاستنتاجات غير المرتبطة | يولّد فقط ما هو مطلوب لـ `G` |
-| **الكفاءة** | أقل كفاءة — ينتج حقائق «غير ذات صلة» | أكثر كفاءة في هذا السيناريو |
-| **التوجّه** | لا يتوجّه للهدف | موجّه للهدف `G` |
-| **المسار** | 1000 حقيقة → قواعد عديدة → قد يصل G | `G` → 5 أهداف فرعية → 5 حقائق |
-| **التوصية** | مفيد إذا أردت استنتاج كل شيء ممكن | الأفضل هنا لأن الهدف محدد |
-
----
-
-### تمرين 4: تحليل Heuristic — `heuristic_eval`
-
-**السيناريو:**
-في `Forward Chaining` على `KB` بـ `p=5` محمولات ثنائية و`n=4` ثوابت:
+مُحلِّل وصل للحالة التالية: مكدّس `[0, T, 2]`، الرمز التالي `*`.
 
 **المطلوب:**
-1. احسب الحد الأقصى لعدد الحقائق الأرضية (`ground facts`)
-2. هل يتوقف `FC` مضموناً؟ لماذا؟
+1. ما الإجراء؟
+2. لماذا لا يُختزل `T` هنا رغم أن `T → T * F` قاعدة صحيحة؟
 
 **نموذج الحل:**
-1. عدد الحقائق = `p · nᵏ = 5 · 4² = 5 · 16 = 80` حقيقة كحد أقصى
-2. نعم يتوقف — لأن هذا يُكافئ `Datalog` (محمولات بلا دوال) → `FC` يتوقف بعد `p·nᵏ = 80` حقيقة كحد أقصى
+1. `ACTION[2, *] = S7` → `Shift 7`.
+2. لأن `T * F` لم يكتمل بعد — المُحلِّل يُزيح `*` انتظاراً لـ `F` لإكمال الـ `Handle` الكاملة `T * F`. الاختزال المبكر سيُفقد جزءاً من التعبير.
 
 ---
 
-## الجزء الرابع: تمارين تتبع الخوارزميات (خطوة بخطوة)
+### تمرين تحليل 2: تحليل حالة الخطأ — `case_study`
 
----
-
-### تمرين تتبع 1: Forward Chaining — تتبع كامل
-
-**المدخل:**
-```
-KB:
-  Rains ⇒ WetGrass
-  WetGrass ∧ Cold ⇒ Slippery
-  Cold
-  Rains
-```
-الهدف: `Slippery`
-
-**أكمل الجدول:**
-
-| الدورة | الحقائق الجديدة | هل الهدف محقق؟ |
-| --- | --- | --- |
-| 1 | ؟ | ؟ |
-| 2 | ؟ | ؟ |
-
-**نموذج الحل:**
-
-| الدورة | الحقائق الجديدة | هل الهدف محقق؟ |
-| --- | --- | --- |
-| 1 | `WetGrass` (من `Rains⇒WetGrass`) | لا |
-| 2 | `Slippery` (من `WetGrass∧Cold⇒Slippery`) | ✅ نعم |
-
-**النتيجة النهائية:** `Slippery` محققة في دورتين.
-
-**سؤال MCQ مصاحب:**
-في الدورة 1 من التسلسل أعلاه، ما الحقيقة المشتقة؟
-أ) `Slippery`  ب) `Cold`  ج) `WetGrass`  د) `Rains`
-**الجواب: ج**
-
----
-
-### تمرين تتبع 2: Backward Chaining — سلسلة قواعد
-
-**المدخل:**
-```
-KB:
-  Z(x) ⇒ W(x)
-  Y(x) ⇒ Z(x)
-  X(x) ⇒ Y(x)
-  X(a)
-```
-الهدف: `W(a)`
-
-**أكمل جدول الأهداف:**
-
-| الخطوة | الهدف الحالي | القاعدة المستخدمة | الهدف الجديد |
-| --- | --- | --- | --- |
-| 1 | `W(a)` | ؟ | ؟ |
-| 2 | ؟ | ؟ | ؟ |
-| 3 | ؟ | ؟ | ؟ |
-| 4 | ؟ | حقيقة | محقق ✅ |
-
-**نموذج الحل:**
-
-| الخطوة | الهدف الحالي | القاعدة المستخدمة | الهدف الجديد |
-| --- | --- | --- | --- |
-| 1 | `W(a)` | `Z(x)⇒W(x)`, `{x/a}` | `Z(a)` |
-| 2 | `Z(a)` | `Y(x)⇒Z(x)`, `{x/a}` | `Y(a)` |
-| 3 | `Y(a)` | `X(x)⇒Y(x)`, `{x/a}` | `X(a)` |
-| 4 | `X(a)` | حقيقة مباشرة | ✅ محقق |
-
-**النتيجة النهائية:** `W(a)` مثبتة في 4 خطوات.
-
-**سؤال MCQ مصاحب:**
-ما الهدف في الخطوة 3؟
-أ) `Z(a)`  ب) `Y(a)`  ج) `X(a)`  د) `W(a)`
-**الجواب: ب**
-
----
-
-### تمرين تتبع 3: Resolution Proof — إثبات بالدحض
-
-**المدخل:**
-```
-KB:
-  ∀x Barks(x) ⇒ Dog(x)
-  ∀x Dog(x) ⇒ Animal(x)
-  Barks(Fido)
-الهدف: Animal(Fido)
-```
-
-**أكمل جدول Resolution:**
-
-| الخطوة | البند 1 | البند 2 | θ | الناتج |
-| --- | --- | --- | --- | --- |
-| CNF | `¬Barks(x) ∨ Dog(x)` | `¬Dog(y) ∨ Animal(y)` | — | — |
-| + نفي الهدف | — | `¬Animal(Fido)` | — | — |
-| 1 | ؟ | ؟ | ؟ | ؟ |
-| 2 | ؟ | ؟ | ؟ | ؟ |
-| 3 | ؟ | ؟ | ؟ | `□` |
-
-**نموذج الحل:**
-
-| الخطوة | البند 1 | البند 2 | θ | الناتج |
-| --- | --- | --- | --- | --- |
-| 1 | `¬Dog(y) ∨ Animal(y)` | `¬Animal(Fido)` | `{y/Fido}` | `¬Dog(Fido)` |
-| 2 | `¬Barks(x) ∨ Dog(x)` | `¬Dog(Fido)` | `{x/Fido}` | `¬Barks(Fido)` |
-| 3 | `¬Barks(Fido)` | `Barks(Fido)` | `{}` | `□` ✅ |
-
-**النتيجة:** تناقض → `Animal(Fido)` مثبتة.
-
----
-
-### تمرين تتبع 4: Prolog Execution — تتبع Prolog
-
-**المدخل:**
-```prolog
-parent(tom, bob).
-parent(bob, ann).
-ancestor(X, Y) :- parent(X, Y).
-ancestor(X, Y) :- parent(X, Z), ancestor(Z, Y).
-```
-الاستعلام: `ancestor(tom, ann)?`
-
-**أكمل مسار التنفيذ:**
-
-| الخطوة | الهدف | القاعدة | التعيين |
-| --- | --- | --- | --- |
-| 1 | `ancestor(tom, ann)` | ؟ | ؟ |
-| 2 | ؟ | ؟ | ؟ |
-| ... | ... | ... | ... |
-
-**نموذج الحل:**
-
-| الخطوة | الهدف | القاعدة | التعيين |
-| --- | --- | --- | --- |
-| 1 | `ancestor(tom, ann)` | `ancestor(X,Y):-parent(X,Y)`, `{X/tom,Y/ann}` | يحاول `parent(tom,ann)` → فشل |
-| 2 | `ancestor(tom, ann)` | `ancestor(X,Y):-parent(X,Z),ancestor(Z,Y)`, `{X/tom,Y/ann}` | `parent(tom,Z)` |
-| 3 | `parent(tom, Z)` | حقيقة `parent(tom,bob)` | `{Z/bob}` |
-| 4 | `ancestor(bob, ann)` | `ancestor(X,Y):-parent(X,Y)`, `{X/bob,Y/ann}` | `parent(bob,ann)` |
-| 5 | `parent(bob, ann)` | حقيقة ✅ | `{}` |
-
-**النتيجة:** `ancestor(tom, ann)` = `true` ✅
-
----
-
-## الجزء الرابع: أسئلة تصميم
-
----
-
-### سؤال تصميم 1: تصميم قاعدة معرفة — `architecture`
+**السيناريو:**
+جملة `+ Id $` تُعطى لمُحلِّل `LR`.
 
 **المطلوب:**
-صمّم قاعدة معرفة `FOL` لنظام تشخيص طبي بسيط يعرف: أن المرض `X` يسبب الأعراض `Y`، وأن المريض `Z` لديه أعراض معينة، والهدف هو استنتاج تشخيص المرض المحتمل.
+1. ما الإجراء الأول؟
+2. ماذا يحدث؟ لماذا؟
 
-**نموذج الإجابة:**
-```
-// Facts (حقائق)
-HasSymptom(patient1, fever)
-HasSymptom(patient1, cough)
-HasSymptom(patient2, rash)
-HasSymptom(patient2, fever)
-
-// Rules (قواعد)
-∀p HasSymptom(p, fever) ∧ HasSymptom(p, cough) ⇒ PossiblyHas(p, flu)
-∀p HasSymptom(p, rash) ∧ HasSymptom(p, fever) ⇒ PossiblyHas(p, measles)
-∀p PossiblyHas(p, D) ⇒ ShouldTest(p, D)
-
-// Query
-ShouldTest(patient1, ?)   → ShouldTest(patient1, flu)
-ShouldTest(patient2, ?)   → ShouldTest(patient2, measles)
-```
-
-**استراتيجية الاستنتاج:** `Forward Chaining` — مناسب لأننا نريد استنتاج كل التشخيصات المحتملة.
-
-**معايير التقييم:**
-- وجود حقائق (`ground facts`) لكل مريض وعرض
-- قواعد `Definite Clauses` صحيحة تربط الأعراض بالأمراض
-- الهدف قابل للاستنتاج بـ `GMP`
-- اختيار `Forward Chaining` مُبرَّر
+**نموذج الحل:**
+1. الحالة الابتدائية = 0، الرمز = `+`.
+2. `ACTION[0, +]` = خانة فارغة → **`Error`** ❌
+3. لأن `+` لا يُمكن أن يبدأ تعبيراً صحيحاً — الجملة خاطئة نحوياً.
 
 ---
 
-### سؤال تصميم 2: رسم مخطط Resolution — `uml_design`
-
-**المطلوب:**
-ارسم مخطط `Resolution Proof` لإثبات `Q(b)` من:
-```
-∀x P(x) ⇒ Q(x)
-P(b)
-```
-
-**نموذج الإجابة:**
-
-```
-البنود الأولية:
-  C1: ¬P(x) ∨ Q(x)    (من القاعدة)
-  C2: P(b)              (حقيقة)
-  C3: ¬Q(b)             (نفي الهدف)
-
-خطوة 1:
-  RESOLVE(C1, C2) مع θ={x/b}:
-  → Q(b)                (C4)
-
-خطوة 2:
-  RESOLVE(C4, C3):
-  → □  (جملة فارغة — تناقض)
-
-النتيجة: Q(b) مثبتة بالدحض ✅
-```
-
-**معايير التقييم:**
-- تحويل القاعدة إلى بند `CNF` صحيح
-- إضافة نفي الهدف
-- تطبيق `Resolution` مع `Unification` صحيح
-- الوصول للجملة الفارغة `□`
+## الجزء الرابع: تمارين تتبع التنفيذ
 
 ---
 
-## الجزء الرابع: بطاقات سؤال وجواب (Q&A Cards)
+### تمرين تتبع 1: تحليل `Id * Id $`
 
-**Q1:** ما هو `Universal Instantiation (UI)`؟
-**A:** استبدال متحول كلي `∀v` في جملة `α` بأي `ground term g` للحصول على `SUBST({v/g}, α)` — يُضاف للـ `KB` مع الحفاظ على التكافؤ المنطقي.
-
----
-
-**Q2:** ما الفرق بين `Skolem constant` و`Skolem function`؟
-**A:** `Skolem constant` يُستخدم عند `∃v` خارج نطاق أي `∀`؛ `Skolem function F(x)` تُستخدم عند `∃v` داخل نطاق `∀x` لأن الوجود يعتمد على `x`.
-
----
-
-**Q3:** متى تفشل `UNIFY(α, β)`؟
-**A:** تفشل عندما: (1) المحمولات مختلفة، (2) عدد الوسائط مختلف، (3) تعارض التعيينات (مثل `x=a` و`x=b` في آنٍ)، (4) `Occur Check` — `x` يظهر في `F(x)`.
-
----
-
-**Q4:** ما هي `Definite Clause`؟
-**A:** بند `FOL` يحتوي **بالضبط** حرفاً إيجابياً واحداً — مثل `¬p₁ ∨ ¬p₂ ∨ q` أي `p₁ ∧ p₂ ⇒ q`.
-
----
-
-**Q5:** ما هو `GMP` ومتى يُستخدم؟
-**A:** `Generalized Modus Ponens` = مزج `Modus Ponens` مع `Unification` للعمل مع `Definite Clauses` التي تحتوي متحولات. يُستخدم في `Forward/Backward Chaining`.
-
----
-
-**Q6:** ما خاصية `Forward Chaining` من حيث الاكتمال؟
-**A:** كامل وصحيح لـ `FOL Definite Clauses`. مضمون التوقف مع `Datalog` (بلا دوال). قد لا يتوقف مع `function symbols` إذا كان الهدف غير معلول.
-
----
-
-**Q7:** ما هو `Datalog`؟
-**A:** `Datalog` = `FOL Definite Clauses` بدون `function symbols`. يتوقف `Forward Chaining` فيه بعد `p·nᵏ` تكراراً كحد أقصى.
-
----
-
-**Q8:** ما مشكلة `Backward Chaining` الرئيسية؟
-**A:** **غير كامل** بسبب الحلقات اللانهائية. الحل: فحص الهدف الحالي مقابل كل الأهداف في المكدس. كذلك يعاني من الأهداف الفرعية المتكررة — يُحل بـ `Caching`.
-
----
-
-**Q9:** ما هو `Propositionalization` ومتى يفشل؟
-**A:** تحويل `FOL KB` إلى منطق قضوي بتطبيق `UI` بكل الطرق. يفشل عملياً مع `function symbols` لأن `ground terms` تصبح لانهائية.
-
----
-
-**Q10:** ما مبرهنة هربراند (1930)؟
-**A:** إذا كانت جملة `α` معلولة بـ `FOL KB`، فهي معلولة بمجموعة **منتهية** من الـ `KB` القضوي المُنشأ بتطبيق `UI`.
-
----
-
-**Q11:** ما معنى `semidecidable` في سياق `FOL`؟
-**A:** الاستنتاج في `FOL` نصف قابل للقرار: يمكن إثبات الجملة المعلولة في وقت منتهٍ، لكن لا يمكن إثبات عدم الاستلزام في وقت منتهٍ (قد تدور الحلقة).
-
----
-
-**Q12:** ما هي خطوات تحويل جملة `FOL` إلى `CNF`؟
-**A:** ست خطوات: (1) حذف `⟺` و`⇒`، (2) نقل `¬` للداخل، (3) توحيد المتحولات، (4) `Skolemize`، (5) حذف `∀`، (6) توزيع `∧` على `∨`.
-
----
-
-**Q13:** ما هو `Resolution` في `FOL` وكيف يختلف عن `GMP`؟
-**A:** `Resolution` = دمج بندَيْن (`clauses`) بحذف حرف وتوأمه المنفي بعد `Unification`. يعمل على أي `CNF` (أشمل من `GMP` الذي يقتصر على `Definite Clauses`). كامل لـ `FOL` كاملاً.
-
----
-
-**Q14:** كيف يُثبت `Resolution` جملة `α`؟
-**A:** بالدحض (`Refutation`): أضف `¬α` للـ `KB`، حوّل `KB ∧ ¬α` لـ `CNF`، طبّق `Resolution` حتى تصل `□` (جملة فارغة) → تناقض → `α` صحيحة.
-
----
-
-**Q15:** ما `Closed World Assumption` في `Prolog`؟
-**A:** ما لا يُثبت صحته في `KB` يُعتبر خاطئاً (`Negation as Failure`). مثال: `alive(joe) :- not dead(joe)` → `alive(joe)` يتحقق إذا فشل `dead(joe)`.
-
----
-
-**Q16:** ما الفرق بين `Forward Chaining` و`Backward Chaining` من حيث التوجّه؟
-**A:** `FC` يبدأ من الحقائق ويشتق كل ما يمكن اشتقاقه (غير موجّه للهدف). `BC` يبدأ من الهدف ويبحث عن ما يُثبته (موجّه للهدف — أكفأ عند وجود هدف محدد).
-
----
-
-**Q17:** متى نفضّل `Forward Chaining` على `Backward Chaining`؟
-**A:** عند الرغبة في استنتاج كل الحقائق الممكنة (قواعد بيانات استنتاجية)، أو عند وجود أهداف متعددة غير محددة مسبقاً.
-
----
-
-**Q18:** ما هو `MGU` (Most General Unifier)؟
-**A:** المُوحِّد الأكثر عمومية = التعيين `θ` الأقل تقييداً الذي يوحّد تعبيرَيْن. «الأقل تقييداً» يعني أنه لا يُقيّد متحولات أكثر مما هو ضروري — يُبقي المرونة القصوى.
-
----
-
-## الجزء الخامس: الخوارزميات الكاملة (مرجع Pseudocode)
-
-> مرجع pseudocode كامل — بدون شرح جديد. كل خوارزمية في كتلة مستقلة.
-
+**المدخل:**
 ```text
-// ============================================================
-// UNIVERSAL INSTANTIATION (UI)
-// ============================================================
-function UI(KB, sentence, ground_term):
-  // sentence: ∀v α
-  // ground_term: g (any ground term)
-  new_sentence ← SUBST({v / ground_term}, alpha)
-  KB.add(new_sentence)   // Keeps original sentence too
-  return KB
+Id * Id $
 ```
 
+**تتبّع خطوة بخطوة (أكمل الجدول):**
+
+| الخطوة | المكدّس | الدخل | الإجراء |
+| --- | --- | --- | --- |
+| 1 | `0` | `Id * Id $` | ؟ |
+| 2 | `0 Id 5` | `* Id $` | ؟ |
+| 3 | `0 F 3` | `* Id $` | ؟ |
+| 4 | `0 T 2` | `* Id $` | ؟ |
+| 5 | `0 T 2 * 7` | `Id $` | ؟ |
+| 6 | `0 T 2 * 7 Id 5` | `$` | ؟ |
+| 7 | `0 T 2 * 7 F 10` | `$` | ؟ |
+| 8 | `0 T 2` | `$` | ؟ |
+| 9 | `0 E 1` | `$` | ؟ |
+
+**نموذج الحل:**
+
+| الخطوة | المكدّس | الدخل | الإجراء |
+| --- | --- | --- | --- |
+| 1 | `0` | `Id * Id $` | `S5` |
+| 2 | `0 Id 5` | `* Id $` | `R6` (F→Id) |
+| 3 | `0 F 3` | `* Id $` | `R4` (T→F) |
+| 4 | `0 T 2` | `* Id $` | `S7` |
+| 5 | `0 T 2 * 7` | `Id $` | `S5` |
+| 6 | `0 T 2 * 7 Id 5` | `$` | `R6` (F→Id) |
+| 7 | `0 T 2 * 7 F 10` | `$` | `R3` (T→T*F) |
+| 8 | `0 T 2` | `$` | `R2` (E→T) |
+| 9 | `0 E 1` | `$` | `Acc` ✅ |
+
+**النتيجة:** الجملة `Id * Id` مقبولة ✅
+
+---
+
+### تمرين تتبع 2: تحليل `( Id + Id ) $`
+
+**المدخل:**
 ```text
-// ============================================================
-// EXISTENTIAL INSTANTIATION (EI)
-// ============================================================
-function EI(KB, sentence):
-  // sentence: ∃v α
-  k ← new_unique_skolem_constant()   // Never seen in KB before
-  new_sentence ← SUBST({v / k}, alpha)
-  KB.remove(sentence)                // Replace, don't add
-  KB.add(new_sentence)
-  return KB
+( Id + Id ) $
 ```
 
-```text
-// ============================================================
-// UNIFICATION
-// ============================================================
-function UNIFY(x, y, theta = {}):
-  if theta = fail: return fail
-  if x = y: return theta
-  if IS-VARIABLE(x): return UNIFY-VAR(x, y, theta)
-  if IS-VARIABLE(y): return UNIFY-VAR(y, x, theta)
-  if IS-COMPOUND(x) and IS-COMPOUND(y):
-    if OP(x) ≠ OP(y): return fail
-    return UNIFY(ARGS(x), ARGS(y), UNIFY(OP(x), OP(y), theta))
-  return fail
+**تتبّع خطوة بخطوة (أكمل الجدول — أكمل الإجراء):**
 
-function UNIFY-VAR(var, x, theta):
-  if {var/val} ∈ theta: return UNIFY(val, x, theta)
-  if {x/val} ∈ theta: return UNIFY(var, val, theta)
-  if OCCURS-IN(var, x): return fail   // Occur Check
-  return EXTEND(theta, var, x)
-```
+| الخطوة | المكدّس | الدخل | الإجراء |
+| --- | --- | --- | --- |
+| 1 | `0` | `(Id+Id)$` | ؟ |
+| 2 | `0 ( 4` | `Id+Id)$` | ؟ |
+| 3 | `0 ( 4 Id 5` | `+Id)$` | ؟ |
+| 4 | `0 ( 4 F 3` | `+Id)$` | ؟ |
+| 5 | `0 ( 4 T 2` | `+Id)$` | ؟ |
+| 6 | `0 ( 4 E 8` | `+Id)$` | ؟ |
+| 7 | `0 ( 4 E 8 + 6` | `Id)$` | ؟ |
+| 8 | `0 ( 4 E 8 + 6 Id 5` | `)$` | ؟ |
+| 9 | `0 ( 4 E 8 + 6 F 3` | `)$` | ؟ |
+| 10 | `0 ( 4 E 8 + 6 T 9` | `)$` | ؟ |
+| 11 | `0 ( 4 E 8` | `)$` | ؟ |
+| 12 | `0 ( 4 E 8 ) 11` | `$` | ؟ |
+| 13 | `0 F 3` | `$` | ؟ |
+| 14 | `0 T 2` | `$` | ؟ |
+| 15 | `0 E 1` | `$` | ؟ |
 
-```text
-// ============================================================
-// FORWARD CHAINING (FOL-FC-ASK)
-// ============================================================
-function FOL-FC-ASK(KB, alpha):
-  repeat
-    new ← {}
-    for each sentence r in KB:
-      (p1 ∧ ... ∧ pn ⇒ q) ← STANDARDIZE-APART(r)
-      for each θ s.t. (p1∧...∧pn)θ = (p1'∧...∧pn')θ for some p1',...,pn' in KB:
-        q' ← SUBST(θ, q)
-        if q' not a renaming of sentence in KB or new:
-          add q' to new
-          φ ← UNIFY(q', alpha)
-          if φ ≠ fail: return φ
-    add new to KB
-  until new is empty
-  return false
-```
+**نموذج الحل:**
 
-```text
-// ============================================================
-// BACKWARD CHAINING (FOL-BC-ASK)
-// ============================================================
-function FOL-BC-ASK(KB, goals, theta = {}):
-  if goals is empty: return {theta}
-  answers ← {}
-  q' ← SUBST(theta, FIRST(goals))
-  for each sentence r in KB:
-    (p1 ∧ ... ∧ pn ⇒ q) ← STANDARDIZE-APART(r)
-    theta' ← UNIFY(q, q')
-    if theta' ≠ fail:
-      new_goals ← [p1,...,pn | REST(goals)]
-      answers ← FOL-BC-ASK(KB, new_goals, COMPOSE(theta', theta)) ∪ answers
-  return answers
-```
+| الخطوة | المكدّس | الدخل | الإجراء | القاعدة |
+| --- | --- | --- | --- | --- |
+| 1 | `0` | `(Id+Id)$` | `S4` | — |
+| 2 | `0 ( 4` | `Id+Id)$` | `S5` | — |
+| 3 | `0 ( 4 Id 5` | `+Id)$` | `R6` | F→Id |
+| 4 | `0 ( 4 F 3` | `+Id)$` | `R4` | T→F |
+| 5 | `0 ( 4 T 2` | `+Id)$` | `R2` | E→T |
+| 6 | `0 ( 4 E 8` | `+Id)$` | `S6` | — |
+| 7 | `0 ( 4 E 8 + 6` | `Id)$` | `S5` | — |
+| 8 | `0 ( 4 E 8 + 6 Id 5` | `)$` | `R6` | F→Id |
+| 9 | `0 ( 4 E 8 + 6 F 3` | `)$` | `R4` | T→F |
+| 10 | `0 ( 4 E 8 + 6 T 9` | `)$` | `R1` | E→E+T |
+| 11 | `0 ( 4 E 8` | `)$` | `S11` | — |
+| 12 | `0 ( 4 E 8 ) 11` | `$` | `R5` | F→(E) |
+| 13 | `0 F 3` | `$` | `R4` | T→F |
+| 14 | `0 T 2` | `$` | `R2` | E→T |
+| 15 | `0 E 1` | `$` | `Acc` ✅ | — |
 
-```text
-// ============================================================
-// CONVERSION TO CNF
-// ============================================================
-function TO-CNF(sentence):
-  sentence ← ELIMINATE-BICONDITIONALS(sentence)    // Step 1
-  sentence ← ELIMINATE-IMPLICATIONS(sentence)      // Step 2: α⇒β → ¬α∨β
-  sentence ← MOVE-NOT-INWARDS(sentence)             // Step 3: De Morgan + Quantifier duality
-  sentence ← STANDARDIZE-VARIABLES(sentence)       // Step 4: each quantifier uses unique var
-  sentence ← SKOLEMIZE(sentence)                   // Step 5: replace ∃ with Skolem terms
-  sentence ← DROP-UNIVERSAL-QUANTIFIERS(sentence)  // Step 6: ∀ now implicit
-  sentence ← DISTRIBUTE-AND-OVER-OR(sentence)      // Step 7: CNF distribution
-  return sentence
+---
 
-function SKOLEMIZE(sentence):
-  for each ∃v inside scope of ∀x1,...,∀xk:
-    replace v with new_skolem_function(x1,...,xk)
-  for each ∃v NOT inside any ∀:
-    replace v with new_skolem_constant()
-  return sentence
-```
+### تمرين تتبع 3: تتبع جزئي — أكمل القاعدة
 
-```text
-// ============================================================
-// RESOLUTION (FOL Resolution Step)
-// ============================================================
-function RESOLVE(c1, c2):
-  // c1, c2: clauses (sets of literals)
-  resolvents ← {}
-  for each literal Li in c1:
-    for each literal Mj in c2:
-      theta ← UNIFY(Li, NOT(Mj))
-      if theta ≠ fail:
-        resolvent ← SUBST(theta, (c1 - {Li}) ∪ (c2 - {Mj}))
-        resolvents.add(resolvent)
-  return resolvents
+**المدخل:** `Id + Id + Id $`
 
-function RESOLUTION-PROOF(KB, alpha):
-  clauses ← CNF(KB ∧ NOT(alpha))   // Add negated goal
-  new ← {}
-  loop:
-    for each pair (Ci, Cj) in clauses:
-      resolvents ← RESOLVE(Ci, Cj)
-      if □ ∈ resolvents: return true   // Empty clause = contradiction
-      new ← new ∪ resolvents
-    if new ⊆ clauses: return false     // No new clauses = not entailed
-    clauses ← clauses ∪ new
-```
+**المطلوب:** حدّد القاعدة المُطبَّقة في كل خطوة `Reduce`:
+
+| الخطوة Reduce | المكدّس قبل السحب | القاعدة المُطبَّقة | المكدّس بعد الدفع |
+| --- | --- | --- | --- |
+| 1 | `0 Id 5` | ؟ | `0 F 3` |
+| 2 | `0 F 3` | ؟ | `0 T 2` |
+| 3 | `0 T 2` | ؟ | `0 E 1` |
+| ... (بعد Shift +، Shift Id) | `0 E 1 + 6 Id 5` | ؟ | `0 E 1 + 6 F 3` |
+
+**نموذج الحل:**
+1. `F → Id` (القاعدة 6)
+2. `T → F` (القاعدة 4)
+3. `E → T` (القاعدة 2)
+4. `F → Id` (القاعدة 6) — تكرار نفس النمط لكل `Id` إضافي
+
+---
+
+### تمرين تتبع 4: تحديد عدد الخطوات
+
+**المطلوب:** بدون تنفيذ كامل، أجب:
+- جملة `Id $`: كم خطوة `Reduce` قبل `Accept`؟
+- جملة `Id + Id $`: كم خطوة `Shift`؟
+- جملة `Id * Id * Id $`: كم مرة تُطبَّق `F → Id`؟
+
+**نموذج الحل:**
+- `Id $`: 3 مرات Reduce (F→Id، T→F، E→T)
+- `Id + Id $`: 4 مرات Shift (Id، +، Id، ثم يبقى $ لـ Accept)
+- `Id * Id * Id $`: 3 مرات F→Id (لكل `Id`)
+
+---
+
+### تمرين تتبع 5: تتبع جدول `GOTO`
+
+**المطلوب:** ما الحالة الناتجة في كل حالة؟
+
+| الحالة الحالية `S'` | الرمز غير الطرفي `A` | `GOTO[S', A]` |
+| --- | --- | --- |
+| 0 | E | ؟ |
+| 0 | T | ؟ |
+| 0 | F | ؟ |
+| 4 | E | ؟ |
+| 6 | T | ؟ |
+| 7 | F | ؟ |
+
+**نموذج الحل:**
+
+| `S'` | `A` | `GOTO[S', A]` |
+| --- | --- | --- |
+| 0 | E | 1 |
+| 0 | T | 2 |
+| 0 | F | 3 |
+| 4 | E | 8 |
+| 6 | T | 9 |
+| 7 | F | 10 |
 
 ---
 
@@ -2187,132 +1229,114 @@ function RESOLUTION-PROOF(KB, alpha):
 
 ---
 
-### السؤال 1: ما هو `Universal Instantiation` وما شروطه؟
+### السؤال 1: ما `Bottom-Up Parsing`؟
 **نموذج الإجابة:**
-1. **التعريف:** استبدال المتحول الكلي `v` في `∀v α` بـ `ground term g` للحصول على `SUBST({v/g}, α)`.
-2. **الشروط:** `g` يجب أن يكون `ground term` (بدون متحولات). يمكن تطبيقه مرات غير محدودة.
-3. **مثال:** من `∀x King(x)⇒Evil(x)` → `King(John)⇒Evil(John)` بوضع `g=John`.
-4. **متى نستخدم:** لاشتقاق حقائق محددة من قواعد عامة؛ خطوة أساسية في `Propositionalization`.
+1. **التعريف:** أسلوب تحليل نحوي يبني شجرة الاشتقاق من الأوراق (الرموز الطرفية) وصولاً للجذر (الرمز الابتدائي `S`).
+2. **المكونات:** `Stack`، `Input String`، `ACTION Table`، `GOTO Table`، `Processing Program`.
+3. **مثال:** تحليل `a + b` يبدأ بالتعرف على `a` كـ `Id` ثم `F` ثم `T` ثم `E`.
+4. **متى نستخدمه:** أقوى من `Top-Down` — يُعالج `Left Recursion` ويقبل مجموعة أوسع من القواعد.
 
 ---
 
-### السؤال 2: اشرح الفرق بين `Forward Chaining` و`Backward Chaining`.
+### السؤال 2: اشرح عملية `Shift` و `Reduce`.
 **نموذج الإجابة:**
-1. **التعريف:** `FC` = من الحقائق نحو الهدف؛ `BC` = من الهدف نحو الحقائق.
-2. **المكونات:** كلاهما يستخدم `GMP` و`Unification`؛ `FC` يستخدم `FOL-FC-ASK`، `BC` يستخدم `FOL-BC-ASK`.
-3. **مثال:** لإثبات `Criminal(West)`: `FC` يشتق `Weapon(M1)` ثم `Sells(...)` ثم `Criminal(West)`؛ `BC` يبدأ من `Criminal(West)` ويبحث عما يستلزمه.
-4. **متى نستخدم:** `FC` لاستنتاج كل الحقائق؛ `BC` عند وجود هدف محدد.
+1. **التعريف:** `Shift` = دفع الرمز الحالي + حالة جديدة على المكدّس وقراءة التالي. `Reduce` = استبدال أعلى المكدّس بالجانب الأيسر لقاعدة.
+2. **الفرق:** `Shift` يُقدِّم في الدخل؛ `Reduce` لا يُقدِّم.
+3. **مثال:** `Shift` تحوّل `Id` للمكدّس؛ `Reduce` تحوّل `Id` إلى `F` بتطبيق `F → Id`.
+4. **متى نستخدم كلاً منهما:** يُحدَّد بجدول `ACTION`.
 
 ---
 
-### السؤال 3: ما هو `Unification` ولماذا هو ضروري في `FOL`؟
+### السؤال 3: ما مكوّنات `LR Parser`؟
 **نموذج الإجابة:**
-1. **التعريف:** إيجاد تعيين `θ` بحيث `αθ = βθ` لتعبيرَيْن `α` و`β`.
-2. **المكونات:** `Substitution` (الإحلال)، `MGU` (الأكثر عمومية)، `Standardize Apart` (منع التعارض).
-3. **مثال:** `UNIFY(P(x,John), P(Mary,y))` = `{x/Mary, y/John}`.
-4. **متى نستخدم:** في كل عملية استنتاج في `FOL` — بدون `Unification` لا يمكن مطابقة القواعد مع الحقائق المحتوية متحولات.
+1. **التعريف:** `LR Parser` مُحلِّل تصاعدي منهجي.
+2. **المكونات:** (أ) `Stack` يحمل أزواج (رمز، حالة). (ب) `Input String` تنتهي بـ `$`. (ج) `ACTION Table` للقرارات. (د) `GOTO Table` للانتقال بعد `Reduce`. (هـ) `Processing Program` كمحرّك.
+3. **مثال:** الجدول في الشريحة 116 مع 12 حالة (0–11).
+4. **متى نستخدمه:** لتحليل القواعد `LR(k)` — أوسع من `LL(k)`.
 
 ---
 
-### السؤال 4: لماذا `Existential Instantiation` يُطبَّق مرة واحدة فقط؟
+### السؤال 4: اشرح الفرق بين جدول `ACTION` وجدول `GOTO`.
 **نموذج الإجابة:**
-1. **التعريف:** `EI` يُحل محل (`replace`) الجملة الوجودية بجملة تستخدم ثابت سكولم جديد.
-2. **السبب:** `EI` يُنتج `KB` **غير مكافئ** للأصلي — تطبيقه مرتين قد ينتج ثوابت سكولم مختلفة لنفس الكيان ويُربك الاستنتاج.
-3. **مثال:** `∃x P(x)` → `P(C₁)`. إذا طبّقنا مرة ثانية: `P(C₂)` — وهذا يعني كيانَيْن مختلفَيْن بينما ربما الأصل يُشير لكيان واحد.
-4. **متى نستخدم:** مرة واحدة فقط لكل جملة وجودية.
+1. **`ACTION`:** يُستعلَم بـ (حالة، رمز طرفي) → يُعطي `Shift k`، `Reduce k`، `Accept`، أو `Error`.
+2. **`GOTO`:** يُستعلَم بـ (حالة، رمز غير طرفي) → يُعطي رقم الحالة الجديدة بعد `Reduce`.
+3. **الاستخدام:** `ACTION` في كل خطوة؛ `GOTO` فقط بعد `Reduce`.
+4. **متى:** معاً في كل دورة تنفيذ.
 
 ---
 
-### السؤال 5: ما خصائص `Resolution` في `FOL`؟
+### السؤال 5: لماذا يُسحب `2n` عنصر وليس `n` عند `Reduce`؟
 **نموذج الإجابة:**
-1. **التعريف:** قاعدة استنتاج تدمج بندَيْن بحذف حرف وتوأمه المنفي بعد `Unification`.
-2. **المكونات:** `Refutation` (الدحض)، `CNF`، `Empty Clause □`.
-3. **مثال:** `Rich(x)∨¬Wise(x)` + `Wise(Ken)` → `Rich(Ken)` بـ `θ={x/Ken}`.
-4. **الخصائص:** صحيحة وكاملة لـ `FOL` كاملاً. تعمل على أي `CNF` (ليس فقط `Definite Clauses`).
+1. **التعريف:** لأن المكدّس يحمل **زوجاً** لكل موقع: الرمز والحالة المقترنة به.
+2. **الشرط:** `n = |RHS(production)|` → عدد الرموز في الجانب الأيمن.
+3. **مثال:** `T → T * F` → `n = 3` → سحب `6` عناصر.
+4. **متى:** دائماً عند كل `Reduce`.
 
 ---
 
-### السؤال 6: ما الفرق بين `GMP` و`Resolution`؟
+### السؤال 6: متى يكون الإجراء `Accept`؟
 **نموذج الإجابة:**
-1. **التعريف:** `GMP` = `Modus Ponens` المُعمَّم للـ `Definite Clauses`؛ `Resolution` = قاعدة استنتاج عامة للـ `CNF`.
-2. **المكونات/الشروط:** `GMP` يقتصر على جُمَل `(p₁∧...∧pₙ⇒q)`. `Resolution` يعمل على أي `(l₁∨...∨lₖ)`.
-3. **مثال:** `GMP` لا يستطيع التعامل مع `¬A∨¬B∨¬C` (ليست `Definite`)؛ `Resolution` يستطيع.
-4. **متى نستخدم:** `GMP` لـ `Chaining` على `Definite Clauses`؛ `Resolution` للإثبات الكامل.
+1. **الشرط:** `ACTION[current_state, $] = Acc`.
+2. **المكونات:** في الجدول المعطى، `ACTION[1, $] = Acc`.
+3. **مثال:** المكدّس `[0, E, 1]` والدخل `$` → `Accept`.
+4. **المعنى:** الجملة تنتمي للغة المُعرَّفة بالقواعد.
 
 ---
 
-### السؤال 7: ما هي مشكلة مطابقة المقدمات التعاملية ولماذا هي `NP-hard`؟
+### السؤال 7: لماذا القواعد `E → E + E` مشكلة في `LR`؟
 **نموذج الإجابة:**
-1. **التعريف:** إيجاد تعيين `θ` يوحّد `n` مقدمة في قاعدة مع حقائق معروفة في `KB` دفعة واحدة.
-2. **السبب:** تكافئ حل `CSP` — و`CSP` يشمل `3SAT` كحالة خاصة (كما في مثال تلوين الخريطة).
-3. **مثال:** قاعدة `Diff(wa,nt)∧...∧Diff(v,sa)⇒Colorable()` — مطابقتها مع الألوان = حل تلوين خريطة = `CSP`.
-4. **متى نستخدم:** الوعي بهذا يدفعنا لاستخدام `Database Indexing` وتحسينات أخرى.
+1. **التعريف:** هذه قواعد غامضة `Ambiguous` تُسبب `Shift/Reduce Conflict`.
+2. **المشكلة:** المُحلِّل لا يعرف هل يُزيح أم يختزل عند وجود `E + E` على المكدّس ورمز `+` في الدخل.
+3. **الحل:** تقسيم القواعد لمستويات (`E → E+T`, `T → T*F`) لتعكس الأولوية.
+4. **متى:** كلما كانت القواعد غامضة.
 
 ---
 
-### السؤال 8: لماذا `Backward Chaining` ناقص وكيف يُصلَح؟
+### السؤال 8: ما الفرق بين `LR(0)`, `SLR(1)`, `LALR(1)`, `CLR(1)`؟ (شرح زيادة للفهم)
+
+> **(شرح زيادة للفهم)**
+
 **نموذج الإجابة:**
-1. **التعريف:** `BC` ناقص بمعنى: قد لا يجد الإثبات حتى لو كان موجوداً بسبب حلقات لانهائية.
-2. **المكونات:** يعتمد على `Depth-First` بدون فحص للدورات.
-3. **مثال:** `P(x):-P(f(x))` → `BC` يدخل حلقة `P(a)→P(f(a))→P(f(f(a)))→...`
-4. **الحل:** (1) `Loop Detection`: فحص الهدف مقابل كل أهداف المكدس. (2) `Caching`: تخزين الأهداف الفرعية المحلولة.
+1. **`LR(0)`:** لا ينظر لأي رمز قادم — الأبسط والأضعف.
+2. **`SLR(1)`:** ينظر رمزاً واحداً مع استخدام `FOLLOW` لتحديد وقت `Reduce`.
+3. **`LALR(1)`:** يدمج حالات متشابهة من `CLR(1)` — توازن بين القوة والحجم.
+4. **`CLR(1)`:** الأقوى — يحتسب `Lookahead` لكل عنصر — جداول أكبر.
 
 ---
 
-### السؤال 9: ما الفرق بين `Propositionalization` المباشر وخوارزميات `Chaining`؟
+### السؤال 9: ما الـ `Handle` ولماذا هو مهم؟
 **نموذج الإجابة:**
-1. **التعريف:** `Propositionalization` = تحويل كامل للـ `FOL KB` إلى قضوي؛ `Chaining` = استنتاج مباشر في `FOL` بـ `Unification`.
-2. **المكونات:** `Propositionalization` ينتج `ground terms` لا حصر لها؛ `Chaining` يعمل مع المتحولات مباشرة.
-3. **مثال:** `Propositionalization` لـ `∀x King(x)` ينتج `King(John), King(Richard),...`؛ `FC` يوحّد `x` مع الحقائق مباشرة.
-4. **متى نستخدم:** `Propositionalization` لـ `KB` صغير بلا دوال؛ `Chaining` للعمل الأكثر كفاءة.
+1. **التعريف:** الـ `Handle` هو السلسلة في أعلى المكدّس التي تُطابق الجانب الأيمن لقاعدة وتُختزل.
+2. **الأهمية:** تحديد الـ `Handle` الصحيح هو جوهر `Bottom-Up Parsing`.
+3. **مثال:** في مكدّس `$E+E*Id`، الـ `Handle` هو `Id` (أعلى المكدّس).
+4. **الصعوبة:** اختيار الـ `Handle` الخاطئ يؤدي لنتيجة غلط.
 
 ---
 
-### السؤال 10: ما هو `Prolog` وكيف يختلف عن `FOL` القياسي؟
+### السؤال 10: ما الفرق بين `Shift/Reduce Conflict` و `Reduce/Reduce Conflict`؟ (غير مشروحة في المحاضرة)
+
+> **(غير مشروحة في المحاضرة)**
+
 **نموذج الإجابة:**
-1. **التعريف:** `Prolog` = نظام برمجة منطقية يطبّق `Backward Chaining` على `Horn Clauses`.
-2. **المكونات:** `Open Coding` للـ `Unification`، ربط مباشر للجُمَل، `CWA`، `Depth-First`.
-3. **الاختلافات:** `Prolog` يستخدم `CWA` (ما لا يُثبت = خاطئ) و`FOL` يستخدم `OWA`؛ `Prolog` يهمل `Occur Check`؛ `Prolog` يطبّق `Depth-First` بدون ضمان اكتمال.
-4. **متى نستخدم:** `Prolog` للبرمجة الرمزية والذكاء الاصطناعي الكلاسيكي؛ `FOL` النظري للتحليل المنطقي.
+1. **`Shift/Reduce Conflict`:** الجدول يحتوي في خانة واحدة كلاً من `Shift` و `Reduce` — لا يعرف أيهما يُطبّق.
+2. **`Reduce/Reduce Conflict`:** خانة واحدة تحتوي `Reduce k` و `Reduce j` (قاعدتان مختلفتان).
+3. **الحل:** مراجعة القواعد النحوية وتعديلها لإزالة الغموض.
+4. **السبب الشائع:** قواعد غامضة أو `Left Recursion` غير مُعالَجة.
 
 ---
 
-## الجزء السادس: قائمة فحص ذاتي قبل الامتحان ✅
-
-- [ ] أفهم الفرق بين `UI` (يضيف، مرات غير محدودة، تكافؤ) و`EI` (يستبدل، مرة واحدة، توافق فقط)
-- [ ] أستطيع تطبيق `UI` وإنتاج الجمل الجديدة من `∀x P(x)`
-- [ ] أستطيع تطبيق `EI` وتسمية ثابت سكولم جديد صحيح
-- [ ] أفهم أن `Propositionalization` صحيح نظرياً لكنه يُولّد جُملاً لانهائية مع `function symbols`
-- [ ] أستطيع حل مسائل `Unification` وتحديد `θ` أو قول `fail`
-- [ ] أعرف متى يفشل `UNIFY`: (1) عمليات مختلفة (2) أعداد وسائط مختلفة (3) تعارض تعيينات (4) `Occur Check`
-- [ ] أفهم `Standardize Apart` وسبب الحاجة إليه
-- [ ] أستطيع تطبيق `GMP` وإيجاد `θ` والنتيجة `qθ`
-- [ ] أعرف أن `GMP` يعمل على `Definite Clauses` فقط
-- [ ] أستطيع تتبع `Forward Chaining` خطوة بخطوة وملء الجدول
-- [ ] أعرف أن `FC` كامل لـ `Datalog`، قد لا يتوقف مع `function symbols`
-- [ ] أستطيع تتبع `Backward Chaining` وبناء شجرة الأهداف
-- [ ] أعرف أن `BC` ناقص بسبب الحلقات وكيف يُصلَح
-- [ ] أستطيع تحويل جملة `FOL` إلى `CNF` بالخطوات الست
-- [ ] أعرف الفرق بين `Skolem constant` و`Skolem function` ومتى يُستخدم كل منهما
-- [ ] أستطيع تطبيق خطوة `Resolution` مع `Unification`
-- [ ] أفهم طريقة الدحض (`Refutation`) في `Resolution`
-- [ ] أعرف أن `Resolution` كاملة لـ `FOL` بينما `GMP` لـ `Definite Clauses` فقط
-- [ ] أفهم `Negation as Failure` في `Prolog` وما يختلف عن `¬` في `FOL`
-- [ ] أعرف أن الاستنتاج في `FOL` `semidecidable` (مبرهنة تورينج/تشيرش 1936)
-- [ ] أستطيع حل مسائل إثبات `Criminal(West)` بالثلاث طرق
+## الجزء السادس: ورقة المراجعة السريعة — Cheat Sheet
 
 ---
-
-## الجزء السادس: ورقة المراجعة السريعة (Cheat Sheet)
 
 ### 🔑 خريطة العلاقات بين المحاضرات
 
 | المحاضرة | ترتبط مع | كيف؟ |
 | --- | --- | --- |
-| `FOL Syntax/Semantics` (سابقة) | هذه المحاضرة | `FOL` هو الأساس؛ نحن نستنتج الآن |
-| `Propositional Logic` (سابقة) | `Propositionalization`، `Resolution` | تقنيات الاستنتاج القضوي تُعمَّم هنا |
-| `Search Algorithms` (سابقة) | `Forward/Backward Chaining` | `BFS/DFS` مستخدمان في تتبع الأهداف |
-| `Logic Programming/Prolog` | `Backward Chaining` | `Prolog` = تطبيق `BC` عملياً |
+| `Lexical Analysis` | `Bottom-Up Parsing` | تُنتج `Token Stream` هو الدخل للمُحلِّل |
+| `CFG & Derivation` | `LR Parser` | القواعد النحوية هي أساس جدول `ACTION/GOTO` |
+| `Top-Down LL(1)` | `Bottom-Up LR` | كلاهما `Syntax Analysis` لكن باتجاهين مختلفين |
+| `First/Follow` | `SLR/LALR` | تُستخدم لبناء جداول `LR` المتقدمة |
 
 ---
 
@@ -2320,13 +1344,12 @@ function RESOLUTION-PROOF(KB, alpha):
 
 | الموضوع | النقاط |
 | --- | --- |
-| `UI vs EI` | `UI`: أضف + حافظ على تكافؤ. `EI`: استبدل + فقدان تكافؤ. |
-| `Unification` | القلب النابض لاستنتاج `FOL`. `UNIFY(α,β)=θ` بحيث `αθ=βθ`. |
-| `Skolem` | `Constant` خارج `∀`؛ `Function(x)` داخل `∀x`. |
-| `FC` | أمامي، كامل لـ `Datalog`، قد لا يتوقف مع دوال. |
-| `BC` | خلفي، موجّه للهدف، ناقص بسبب حلقات. |
-| `Resolution` | بالدحض: أضف `¬α`، `CNF`، اشتق `□`. كاملة لـ `FOL`. |
-| `semidecidable` | يُثبت المعلول؛ لا يتوقف لغير المعلول. |
+| اتجاه البناء | من الأوراق للجذر — اشتقاق أيمن معكوس |
+| المكدّس | يحمل أزواج (رمز، حالة) — دائماً! |
+| قاعدة السحب | `2 × |RHS|` عند `Reduce` |
+| `Shift` vs `Reduce` | `Shift` يُقدِّم في الدخل؛ `Reduce` لا يُقدِّم |
+| `Accept` | `ACTION[1, $] = Acc` في هذا الجدول |
+| `GOTO` للـ | رموز غير طرفية فقط (E، T، F) |
 
 ---
 
@@ -2334,20 +1357,13 @@ function RESOLUTION-PROOF(KB, alpha):
 
 | الرمز/المصطلح | المعنى | يُستخدم في |
 | --- | --- | --- |
-| `∀v α` | لكل قيمة لـ `v`، `α` صحيحة | `UI` |
-| `∃v α` | يوجد قيمة لـ `v` تجعل `α` صحيحة | `EI` |
-| `SUBST(θ, α)` | تطبيق الإحلال `θ` على `α` | `UI`، `EI`، `GMP` |
-| `UNIFY(α, β)` | إيجاد `θ` بحيث `αθ = βθ` | `GMP`، `FC`، `BC`، `Resolution` |
-| `MGU` | المُوحِّد الأكثر عمومية | `Unification` |
-| `θ = {x/t}` | إحلال: استبدل `x` بـ `t` | كل عمليات الاستنتاج |
-| `COMPOSE(θ₁,θ₂)` | دمج إحلالَيْن | `BC` |
-| `□` | الجملة الفارغة (تناقض) | `Resolution` |
-| `CNF` | تعاملي طبيعي: `AND` من `OR`-بنود | `Resolution` |
-| `Definite Clause` | بند بحرف إيجابي واحد بالضبط | `GMP`، `FC`، `BC` |
-| `Datalog` | `Definite Clauses` بلا دوال | `FC` يتوقف مضموناً |
-| `p·nᵏ` | الحد الأقصى للحقائق في `Datalog` | تعقيد `FC` |
-| `Skolem Constant` | ثابت جديد لـ `EI` بدون `∀` خارجي | `EI`، `CNF` |
-| `Skolem Function F(x)` | دالة جديدة لـ `EI` داخل `∀x` | `CNF Conversion` |
+| `Sn` | Shift → انتقل للحالة n | جدول ACTION |
+| `Rk` | Reduce بالقاعدة k | جدول ACTION |
+| `Acc` | قبول الجملة | جدول ACTION |
+| خانة فارغة | خطأ نحوي | جدول ACTION |
+| رقم في GOTO | الحالة التالية بعد Reduce | جدول GOTO |
+| `$` | نهاية الدخل | الدخل والجدول |
+| `Handle` | ما يُختزل من أعلى المكدّس | Bottom-Up Parsing |
 
 ---
 
@@ -2355,55 +1371,247 @@ function RESOLUTION-PROOF(KB, alpha):
 
 | # | القاعدة |
 | --- | --- |
-| 1 | `Skolem constant` = ثابت **جديد** لم يظهر في `KB` أبداً |
-| 2 | `EI` يُطبَّق **مرة واحدة** على كل جملة وجودية |
-| 3 | **دائماً** `STANDARDIZE-APART` قبل `Unification` في `Chaining` |
-| 4 | `∃v` داخل `∀x` → `Skolem Function F(x)`؛ خارجه → `Skolem Constant C₁` |
-| 5 | `Forward Chaining` = **أضف** `new` في نهاية الدورة، ليس أثناءها |
-| 6 | `Resolution` = أضف **نفي الهدف** ثم اشتق `□` |
-| 7 | الاستنتاج في `FOL` **semidecidable** = يُثبت المعلول لكن لا يتوقف للمجهول |
-| 8 | `GMP` = `Definite Clauses` فقط؛ `Resolution` = أي `CNF` |
-| 9 | `not` في `Prolog` ≠ `¬` في `FOL` (`Negation as Failure` ≠ `Negation`) |
-| 10 | `Backward Chaining` ناقص دون `Loop Detection` + `Caching` |
+| 1 | المكدّس يحمل **دائماً** أزواج (رمز، حالة) |
+| 2 | `Shift` تقرأ رمزاً جديداً؛ `Reduce` لا تقرأ |
+| 3 | `2 × n` عناصر تُسحب عند Reduce (n = طول RHS) |
+| 4 | `GOTO` للرموز غير الطرفية فقط |
+| 5 | `Accept` = المكدّس `[0,S,1]` والدخل `$` |
+| 6 | القواعد الغامضة تُسبب Shift/Reduce Conflict |
+| 7 | `LR` يقبل قواعد Left-Recursive بلا مشاكل |
+
+---
+
+## الجزء الرابع: بطاقات سؤال وجواب (Q&A Cards)
+
+---
+
+**Q1:** ما معنى `Bottom-Up Parsing`؟
+**A:** تحليل يبني الشجرة من الأوراق (Tokens) وصولاً للجذر (S) عبر اشتقاق أيمن معكوس.
+
+---
+
+**Q2:** ما الفرق بين `Shift` و `Reduce`؟
+**A:** `Shift` يدفع رمزاً من الدخل للمكدّس ويقرأ التالي. `Reduce` يستبدل أعلى المكدّس بالجانب الأيسر لقاعدة دون قراءة رمز جديد.
+
+---
+
+**Q3:** كم عنصراً يُسحب عند `Reduce` بقاعدة `T → T * F`؟
+**A:** 6 عناصر (3 رموز × 2 لأن المكدّس يحمل رمزاً + حالة لكل موقع).
+
+---
+
+**Q4:** ما معنى `S5` في جدول `ACTION`؟
+**A:** `Shift` وانتقل للحالة 5 (ادفع الرمز الحالي والحالة 5 على المكدّس).
+
+---
+
+**Q5:** ما معنى `R3` في جدول `ACTION`؟
+**A:** `Reduce` باستخدام القاعدة رقم 3 (في مثالنا: `T → T * F`).
+
+---
+
+**Q6:** متى يحدث `Accept`؟
+**A:** عندما `ACTION[current_state, $] = Acc` — في مثالنا `ACTION[1, $] = Acc`.
+
+---
+
+**Q7:** ما الفرق بين `ACTION` و `GOTO`؟
+**A:** `ACTION` للرموز الطرفية يُعطي Shift/Reduce/Accept/Error. `GOTO` للرموز غير الطرفية يُعطي رقم الحالة التالية بعد Reduce.
+
+---
+
+**Q8:** ما الـ `Handle`؟
+**A:** السلسلة في أعلى المكدّس التي تُطابق الجانب الأيمن لقاعدة وتُختزل.
+
+---
+
+**Q9:** هل `Left Recursion` مشكلة في `LR Parser`؟
+**A:** لا — `LR Parser` يتعامل مع `Left Recursion` بشكل طبيعي (عكس `Top-Down`).
+
+---
+
+**Q10:** ما الحالة التي يبدأ منها المُحلِّل دائماً؟
+**A:** الحالة 0 — وهي ثابتة دائماً في قاع المكدّس.
+
+---
+
+**Q11:** بعد `Reduce`، كيف نحسب الحالة الجديدة؟
+**A:** `GOTO[S', A]` حيث `S'` = رأس المكدّس بعد السحب، `A` = الجانب الأيسر للقاعدة.
+
+---
+
+**Q12:** ما مكوّنات `LR Parser`؟
+**A:** جدول إنتاجات (ACTION + GOTO)، مكدّس (Stack)، سلسلة الدخل، وبرنامج المعالجة.
+
+---
+
+**Q13:** ما الخانة الفارغة في جدول `ACTION`؟
+**A:** تعني `Error` — الجملة خاطئة نحوياً.
+
+---
+
+**Q14:** لماذا القواعد الغامضة مشكلة في `LR`؟
+**A:** لأنها تُسبب `Shift/Reduce Conflict` — خانة في الجدول تحمل قيمتين متعارضتين.
+
+---
+
+**Q15:** ما القاعدة رقم 6 في المثال؟
+**A:** `F → Id` — تحويل المُعرِّف `Id` إلى `F`.
+
+---
+
+**Q16:** كم عنصراً يُسحب عند `Reduce 5` (أي `F → (E)`)؟
+**A:** 6 عناصر — لأن `|RHS| = |(E)| = 3` رموز × 2 = 6.
+
+---
+
+**Q17:** ما الفرق بين `LR(0)` و `SLR(1)`؟
+**A:** `LR(0)` لا يستخدم رمز نظر مسبق؛ `SLR(1)` يستخدم `FOLLOW` لتحديد متى يُختزل.
+
+---
+
+**Q18:** ماذا يحمل المكدّس في `LR Parser`؟
+**A:** أزواج (رمز، حالة) — لكل رمز تمت معالجته حالة مقترنة محفوظة.
+
+---
+
+## الجزء السادس: قائمة فحص ذاتي قبل الامتحان ✅
+
+- [ ] أفهم الفرق بين `Top-Down` و `Bottom-Up Parsing`
+- [ ] أعرف عملية `Shift` وأستطيع تطبيقها: ادفع (رمز، حالة)، اقرأ التالي
+- [ ] أعرف عملية `Reduce` وأستطيع تطبيقها: اسحب `2n`، ادفع (LHS، GOTO[S',LHS])
+- [ ] أستطيع قراءة جدول `ACTION` وفهم `Sn`، `Rk`، `Acc`، خانة فارغة
+- [ ] أستطيع قراءة جدول `GOTO` وأعرف أنه للرموز غير الطرفية فقط
+- [ ] أحفظ القواعد الست للمثال (E→E+T، E→T، T→T*F، T→F، F→(E)، F→Id)
+- [ ] أستطيع تتبع تحليل `a * b + c $` خطوة بخطوة
+- [ ] أعرف أن المكدّس يحمل دائماً أزواج (رمز + حالة)
+- [ ] أتذكر قاعدة `2n` للسحب عند `Reduce`
+- [ ] أعرف أن `Shift` تُقدِّم في الدخل، `Reduce` لا تُقدِّم
+- [ ] أفهم لماذا القواعد الغامضة مشكلة في `LR`
+- [ ] أستطيع تحديد متى `Accept` يحدث
+- [ ] أعرف الفرق بين `Shift/Reduce Conflict` و `Reduce/Reduce Conflict`
+- [ ] أستطيع ملء جدول تتبع كامل من البداية للنهاية
+- [ ] أفهم لماذا `Left Recursion` ليست مشكلة في `LR`
+
+---
+
+## السيناريوهات المركّبة
+
+---
+
+### السيناريو 1: جدول `LR` وتحديد الإجراء
+
+> **القواعد:**
+> ```text
+> (1) E → E + T   (2) E → T   (3) T → T * F
+> (4) T → F       (5) F → (E) (6) F → Id
+> ```
+> **جدول ACTION (جزء):**
+> | الحالة | Id | + | * | $ |
+> | --- | --- | --- | --- | --- |
+> | 0 | S5 | | | |
+> | 2 | | R2 | S7 | R2 |
+> | 5 | | R6 | R6 | R6 |
+
+**السؤال أ (hard):** المكدّس `[0, Id, 5]`، الدخل `* b $`. ما الإجراء؟
+أ) Shift 7  ب) Reduce 6  ج) Accept  د) Error
+
+**الإجابة: ب** — `ACTION[5, *] = R6`
+
+**السؤال ب (hard):** بعد تطبيق Reduce 6 أعلاه، المكدّس أصبح `[0, F, 3]`. ما التالي؟
+أ) Shift  ب) Reduce 4  ج) Accept  د) Error
+
+**الإجابة: ب** — `ACTION[3, *] = R4`
+
+**السؤال ج (medium):** كم مرة تُطبَّق `F → Id` في تحليل `Id * Id $`؟
+أ) مرة  ب) مرتان  ج) ثلاث  د) لا تُطبَّق
+
+**الإجابة: ب** — مرتان (مرة لكل `Id`)
+
+**السؤال د (hard):** بعد اكتمال تحليل `Id * Id $`، ما العناصر النهائية في المكدّس قبل `Accept`؟
+أ) `[0, T, 2]`  ب) `[0, E, 1]`  ج) `[0, F, 3]`  د) `[0]`
+
+**الإجابة: ب** — المكدّس النهائي دائماً `[0, E, 1]` قبل `Accept`
+
+---
+
+### السيناريو 2: كشف التعارضات
+
+> القواعد:
+> ```text
+> S → if E then S
+> S → if E then S else S
+> S → other
+> ```
+
+**السؤال أ:** ما نوع التعارض الذي تُسبّبه هذه القواعد؟
+أ) Reduce/Reduce  ب) Shift/Reduce  ج) لا تعارض  د) Left Recursion
+
+**الإجابة: ب** — مشكلة `Dangling Else` الشهيرة — تُسبب `Shift/Reduce Conflict`.
+
+**السؤال ب:** ما الحل المعتاد لمشكلة `Dangling Else`؟
+أ) إزالة القاعدة الثانية  ب) تفضيل `Shift` على `Reduce` دائماً (= `else` تتبع أقرب `if`)  ج) إضافة قواعد جديدة  د) تغيير الدخل
+
+**الإجابة: ب**
+
+---
+
+### السيناريو 3: تتبع `GOTO`
+
+> المكدّس قبل Reduce: `[0, T, 2, *, 7, F, 10]`
+> القاعدة المُطبَّقة: `T → T * F` (القاعدة 3)
+
+**السؤال أ:** كم عنصراً يُسحب؟
+**الإجابة:** 6
+
+**السؤال ب:** ما الحالة الجديدة في رأس المكدّس بعد السحب؟
+**الإجابة:** الحالة 0 (رأس المكدّس = `[0]`)
+
+**السؤال ج:** ما الحالة المدفوعة؟
+**الإجابة:** `GOTO[0, T] = 2`
+
+**السؤال د:** ما المكدّس النهائي؟
+**الإجابة:** `[0, T, 2]`
+
+---
+
+### السيناريو 4: مقارنة `LL` و `LR`
+
+> جملة: `a - a` | القواعد:
+> ```text
+> E → E - a | a
+> ```
+
+**السؤال أ:** هل يستطيع `LL(1)` تحليلها مباشرةً؟
+أ) نعم  ب) لا — بسبب Left Recursion
+
+**الإجابة: ب**
+
+**السؤال ب:** هل يستطيع `LR` تحليلها؟
+أ) نعم  ب) لا
+
+**الإجابة: أ** — `LR` يتعامل مع `Left Recursion` بشكل طبيعي.
+
+**السؤال ج:** ماذا يجب أن نفعل لتحليلها بـ `LL(1)`؟
+أ) إزالة العودية اليسرى  ب) استخدام `GOTO`  ج) إضافة `$`  د) تغيير الاتجاه
+
+**الإجابة: أ**
 
 ---
 
 <!-- VALIDATION
-lecture_type: inference_fol
-sections_covered:
-  - UI (Universal Instantiation)
-  - EI (Existential Instantiation)
-  - UI vs EI comparison
-  - Propositionalization + problems
-  - Herbrand theorem
-  - Semidecidability (Turing/Church 1936)
-  - Unification + Standardize Apart
-  - GMP (Generalized Modus Ponens)
-  - GMP Soundness proof
-  - Forward Chaining algorithm (FOL-FC-ASK)
-  - Forward Chaining proof trace (Colonel West)
-  - Forward Chaining properties
-  - Forward Chaining efficiency + NP-hard matching
-  - Hard matching example (map coloring)
-  - Backward Chaining algorithm (FOL-BC-ASK)
-  - Backward Chaining trace (Colonel West)
-  - Backward Chaining properties
-  - Logic Programming comparison
-  - Prolog systems
-  - Prolog examples (DFS, append)
-  - Resolution (FOL version)
-  - Conversion to CNF (6 steps)
-  - Resolution proof (definite clauses)
-checklist:
-  - mcq: 18 ✅
-  - debug: 6 ✅
-  - exercises: 6 ✅
-  - analysis_exercises: 4 ✅
-  - trace_exercises: 4 ✅
-  - design_questions: 2 ✅
-  - qa_cards: 18 ✅
-  - theory_questions: 10 ✅
-  - self_check: ✅
-  - cheat_sheet: ✅
-  - pseudocode_reference: 6 algorithms ✅
+sections_covered: [bottom_up_intro, shift_reduce, lr_parser_components, action_goto_table, lr_algorithm, full_trace_a*b+c]
+mcq_count: 18
+mcq_difficulty: medium/hard
+debug_count: 5
+exercise_count: 6
+analysis_exercise_count: 2
+trace_exercise_count: 5
+theory_count: 10
+qa_cards_count: 18
+scenario_clusters: 4
+cheat_sheet: yes
+self_check: yes
+lecture_slides: 112-142
+date: 2026-07-06
 -->
