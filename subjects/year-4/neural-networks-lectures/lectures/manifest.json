@@ -5,6 +5,7 @@
     "year": "2025-2026",
     "academicYear": 4,
     "theme": "amber-default",
+    "enabledLectures":true,
     "department": "القسم النظري"
   },
   "title": "برمجة شرطية(ذكاء اصطناعي) — Conditional Programming (AI)",
